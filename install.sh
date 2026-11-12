@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs the Herdr mods (code-files, git-panel, git-tabs) and the main-code
+# Installs the Herdr mods (code-files, git-panel, git-spaces, git-tabs) and the main-code
 # layout. Backs up anything it would replace.
 #   ./install.sh              install and switch to the main-code layout
 #   ./install.sh --no-switch  install without changing the active layout
@@ -7,7 +7,7 @@ set -euo pipefail
 
 SRC="$(cd "$(dirname "$0")" && pwd)"
 HERDR="${HERDR_APP_HOME:-$HOME/.config/herdr-app}"
-MODS=(code-files git-panel git-tabs)
+MODS=(code-files git-panel git-spaces git-tabs)
 STAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP="$HOME/herdr-mods-backups/$STAMP"
 SWITCH=1; [[ "${1:-}" == "--no-switch" ]] && SWITCH=0

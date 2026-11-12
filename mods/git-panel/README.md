@@ -10,6 +10,7 @@ eliminar ramas, y hacer merge con vista previa desde dos puntos de entrada.
 | Ruta | Qué es |
 |---|---|
 | `mods/git-panel/` | Este mod (nuevo). |
+| `mods/git-spaces/` | Copia del mod `spaces` de Herdr que añade **●n** (archivos con cambios sin commit) junto a ↑↓ en la lista de espacios. |
 | `mods/git-tabs/` | Copia del mod `tabs` de Herdr con un botón **Git** añadido. |
 | `layouts/main-code.json` | Tu layout. Se añadió el bloque `git` a la pila `panel-body` y la barra superior usa `git-tabs`. |
 | `layouts/main-code.json.bak-gitpanel-*` | Copia del layout antes del cambio. |
@@ -129,8 +130,8 @@ Justo antes de ejecutar, el panel vuelve a leer el repositorio. Si algo cambió 
 
 1. Restaura el layout desde la copia de seguridad:
    `cp ~/.config/herdr-app/layouts/main-code.json.bak-gitpanel-* ~/.config/herdr-app/layouts/main-code.json`
-   También puedes editarlo a mano: quita el bloque con `"id": "git"` y vuelve a poner `"mod": "tabs"` en el bloque `tabs`.
-2. Borra `~/.config/herdr-app/mods/git-panel` y `~/.config/herdr-app/mods/git-tabs`.
+   También puedes editarlo a mano: quita el bloque con `"id": "git"` vuelve a poner `"mod": "tabs"` en el bloque `tabs` y `"mod": "spaces"` en el bloque `spaces`.
+2. Borra `~/.config/herdr-app/mods/git-panel`, `~/.config/herdr-app/mods/git-spaces` y `~/.config/herdr-app/mods/git-tabs`.
 
 Herdr aplica los cambios al momento. Si algo falla, `ctrl-alt-shift-escape` vuelve al layout por defecto.
 

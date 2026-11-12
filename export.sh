@@ -4,7 +4,7 @@
 set -euo pipefail
 SRC="$(cd "$(dirname "$0")" && pwd)"
 HERDR="${HERDR_APP_HOME:-$HOME/.config/herdr-app}"
-for m in code-files git-panel git-tabs; do
+for m in code-files git-panel git-spaces git-tabs; do
   rsync -a --delete --exclude .drafts --exclude .dev.json --exclude .accounts.json --exclude .DS_Store "$HERDR/mods/$m/" "$SRC/mods/$m/"
 done
 cp "$HERDR/layouts/main-code.json" "$SRC/layouts/"

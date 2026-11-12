@@ -12,8 +12,12 @@ which is licensed under the Apache License, Version 2.0:
   (the block marked "git-panel integration" in main.js).
 - mods/git-tabs/ started as a copy of Herdr's shipped "tabs" mod. It was
   modified to add a "Git" panel button next to Files and Changes.
+- mods/git-spaces/ started as a copy of Herdr's shipped "spaces" mod. It was
+  modified to show the number of files with uncommitted changes in each
+  space's worktree (the changes are marked "git-spaces" in main.js).
 - layouts/main-code.json started as a copy of Herdr's "main" layout, with a
-  "git" block added to the right panel and the tab bar switched to git-tabs.
+  "git" block added to the right panel, the tab bar switched to git-tabs and
+  the spaces list switched to git-spaces.
 - The gpui-kit.d.ts and jsconfig.json files in each mod folder are Herdr's
   type definitions, copied unchanged by `mod.clone`.
 
