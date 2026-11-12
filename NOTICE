@@ -1,0 +1,20 @@
+herdr-mods
+Copyright 2026 Charlie Herrera
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This repository contains work derived from Herdr Desktop (herdr-app 0.1.15),
+which is licensed under the Apache License, Version 2.0:
+
+- mods/code-files/ started as a copy of Herdr's shipped "files" mod
+  (made with `mod.clone`). It was modified to edit files, keep unsaved
+  drafts, show diffs, and open files on request from the Git panel
+  (the block marked "git-panel integration" in main.js).
+- mods/git-tabs/ started as a copy of Herdr's shipped "tabs" mod. It was
+  modified to add a "Git" panel button next to Files and Changes.
+- layouts/main-code.json started as a copy of Herdr's "main" layout, with a
+  "git" block added to the right panel and the tab bar switched to git-tabs.
+- The gpui-kit.d.ts and jsconfig.json files in each mod folder are Herdr's
+  type definitions, copied unchanged by `mod.clone`.
+
+mods/git-panel/ is original work.
