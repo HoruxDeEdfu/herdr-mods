@@ -248,8 +248,9 @@ export default class Spaces extends View {
       const [branch, counts, status] = await Promise.all([
         exec("git", ["symbolic-ref", "-q", "HEAD"], { cwd, on }),
         exec("git", ["rev-list", "--left-right", "--count", "HEAD...@{upstream}"], { cwd, on }),
-        // git-spaces: uncommitted changes (staged, modified, untracked).
-        exec("git", [...QUIET, "status", "--porcelain", "-z", "--untracked-files=normal"], { cwd: top, on, timeout: 15000 }).catch(() => null),
+        // git-spaces: uncommitted changes (staged, modified, untracked), file by file
+        // like the Git panel: "normal" would count a new folder as one.
+        exec("git", [...QUIET, "status", "--porcelain", "-z", "--untracked-files=all"], { cwd: top, on, timeout: 15000 }).catch(() => null),
       ]);
       const name = repo.endsWith("/.git") ? base(repo.slice(0, -5)) : base(repo).replace(/\.git$/, "");
       const [ahead, behind] = counts.code === 0 ? counts.stdout.trim().split(/\s+/).map(Number) : [0, 0];
