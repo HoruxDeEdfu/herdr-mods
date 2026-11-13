@@ -536,11 +536,6 @@ export default class GitPanel extends View {
     this.openMenu(ref.name, items, cx);
   }
 
-
-
-
-
-
   pinWorktree(path, cx) {
     this.pinned = { cwd: path, on: this.context().on };
     this.sheet = null; this.refresh(cx); cx.notify();
