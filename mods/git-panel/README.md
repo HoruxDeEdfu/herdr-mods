@@ -97,6 +97,8 @@ La vista previa muestra:
 - Divergencia y sincronización con los upstreams.
 - Archivos afectados.
 - Conflictos según una simulación real (`git merge-tree`, que no toca tus archivos).
+- Si es posible un fast-forward, el modo (`--ff`, `--no-ff`, `--ff-only`) y una línea que dice qué verás en el grafo: con fast-forward la rama solo avanza al último commit, **sin commit de merge**, y en clientes como Fork parece que no pasó nada; elige "Siempre crear commit de merge" si quieres verlo. El resultado del merge lo repite con el hash nuevo.
+- El modo empieza en el último que confirmaste en ese repositorio (compartido por sus worktrees) y lo indica con "Modo recordado…". Pull no lo usa ni lo cambia: sigue haciendo fast-forward. Si las ramas divergieron, siempre hay commit de merge y el modo no aplica.
 - Avisos y bloqueos.
 
 Justo antes de ejecutar, el panel vuelve a leer el repositorio. Si algo cambió (por ejemplo, un agente hizo commit), muestra la vista previa actualizada en lugar de fusionar.

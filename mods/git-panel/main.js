@@ -582,7 +582,10 @@ export default class GitPanel extends View {
         const f = await this.fresh(sheet);
         sheet.target = f.status.head;
         sheet.preview = await F.preview(f.git, { ...f, source, target: f.status.head });
-        sheet.mode = "ff";
+        // The mode chosen last in this repository (never for Pull: it keeps Git's default).
+        const saved = entry === "pull" ? null : this.stored(F.modeKey(f.repo, f.on));
+        sheet.mode = F.modeFor(sheet.preview, saved);
+        sheet.modeRemembered = Boolean(saved) && saved !== "ff" && sheet.mode === saved;
         // Nothing to integrate, from any entry point: a notification, not a blocked sheet.
         if (F.pullDecision(sheet.preview) === "up-to-date") {
           if (this.sheet === sheet) this.sheet = null;
@@ -605,7 +608,7 @@ export default class GitPanel extends View {
           // Re-check right before: an agent may have moved something.
           const f = await this.fresh(sheet);
           const rv = await F.revalidate(f.git, { ...f, source: sheet.source, target: sheet.target }, sheet.preview);
-          if (!rv.same) { sheet.preview = rv.fresh; sheet.changed = true; return; }
+          if (!rv.same) { sheet.preview = rv.fresh; sheet.mode = F.modeFor(rv.fresh, sheet.mode); sheet.changed = true; return; }
           const before = sheet.preview.targetSha;
           const r = await O.merge(f.git, f.repo, sheet.source, sheet.mode);
           const after = await Q.revParse(f.git, f.repo.root, "HEAD");
@@ -615,6 +618,7 @@ export default class GitPanel extends View {
             this.setTab("changes");
           } else {
             const ff = (await Q.leftRight(f.git, f.repo.root, before, after)).left === 0 && sheet.preview.ff && sheet.mode !== "no-ff";
+            if (F.shouldRemember(sheet.entry, sheet.preview)) this.store(F.modeKey(f.repo, f.on), sheet.mode);
             this.sheet = { kind: "result", ok: true, ff, count: sheet.preview.incomingCount, source: sheet.source, target: sheet.target, head: after };
           }
         } catch (e) { sheet.error = explain(e); }

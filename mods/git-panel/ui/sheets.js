@@ -5,6 +5,7 @@ import { v_flex, h_flex, Input } from "gpui-base";
 import { settings } from "herdr";
 import { button, pill, notice, spinner, relTime, sectionTitle, ICON, stop } from "./kit.js";
 import { displayArgv } from "../git/runner.js";
+import { ffPreviewLine, ffResultLine } from "../git/merge-flow.js";
 import { diffView } from "./diffview.js";
 
 const mono = () => settings().font_family ?? "JetBrains Mono";
@@ -105,7 +106,9 @@ function previewSheet(v, t, s) {
     .when(!blocked && !p.ff, (e) => e.child(div().font_family(mono()).text_size(11).text_color(t.dim).child(`git merge --no-edit ${p.source}`)))
     .when(!blocked && p.ff, (e) => e.child(sectionTitle(t, "Modo")).children(modes.map(([id, label, cmd]) => h_flex().id(`mode-${id}`).h(28).px(8).gap(8).items_center().rounded(6).cursor_pointer()
       .when(s.mode === id, (el) => el.bg(t.selected)).hover((st) => st.bg(t.hover)).on_click((_e, cx) => { s.mode = id; cx.notify(); })
-      .child(div().w(12).text_color(t.accent).child(s.mode === id ? "●" : "○")).child(div().flex_1().child(label)).child(div().font_family(mono()).text_size(10.5).text_color(t.dim).child(cmd)))))
+      .child(div().w(12).text_color(t.accent).child(s.mode === id ? "●" : "○")).child(div().flex_1().child(label)).child(div().font_family(mono()).text_size(10.5).text_color(t.dim).child(cmd))))
+      .child(notice(t, "info", ffPreviewLine(p, s.mode), "ff-explain"))
+      .when(Boolean(s.modeRemembered), (e) => e.child(div().px(4).text_size(11).text_color(t.dim).child("Modo recordado de tu último merge en este repositorio."))))
     .when(!blocked, (e) => e.child(div().text_size(11).text_color(t.dim).child("Antes de ejecutar se vuelve a comprobar el repositorio; si algo cambió, verás la vista previa actualizada.")));
   const footer = h_flex().gap(8)
     .child(button(t, "pv-cancel", "Cancelar", (_e, cx) => v.closeSheet(cx), { disabled: s.running }))
@@ -144,6 +147,7 @@ function checkoutSheet(v, t, s) {
 function resultSheet(v, t, s) {
   if (s.ok) {
     const content = v_flex().gap(10).child(notice(t, "ok", s.ff ? `${s.target} avanzó ${s.count} commit(s) (fast-forward).` : `${s.source} se fusionó en ${s.target} con un commit de merge.`))
+      .when(Boolean(s.ff), (e) => e.child(notice(t, "info", ffResultLine(s.target, s.head), "ff-result")))
       .child(div().font_family(mono()).text_size(11).text_color(t.dim).child(`HEAD ${s.head?.slice(0, 12) ?? ""}`));
     return frame(v, t, "Merge completado", content, h_flex().gap(8)
       .child(button(t, "rs-hist", "Ver en History", (_e, cx) => { v.sheet = null; v.showInHistory(s.head, cx); }))

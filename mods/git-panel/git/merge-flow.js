@@ -279,3 +279,40 @@ export function pullDecision(p) {
   if (p.ff && !p.blocks.length && p.warnings.every((w) => harmless.has(w.id))) return "fast";
   return "review";
 }
+
+// ---------- fast-forward: say what happened, remember the mode ----------
+// A fast-forward leaves no merge commit, so in a graph (this panel's History,
+// Fork, …) it looks as if nothing happened. The preview and the result say it
+// in one line, and the mode chosen last is remembered per repository.
+
+export const MERGE_MODES = ["ff", "no-ff", "ff-only"];
+const NO_FF_LABEL = "Siempre crear commit de merge";
+const short = (sha) => (sha ?? "").slice(0, 7);
+
+/** Storage key for the last mode chosen in a repository (shared by its worktrees, per machine). */
+export function modeKey(repo, on) { return `merge-mode:${on ?? ""}:${repo.commonDir ?? repo.root}`; }
+
+/**
+ * The mode a preview starts on (or keeps after a refresh). Modes only matter
+ * when a fast-forward is possible; otherwise every merge creates a commit and
+ * "ff-only" would fail, so it is always "ff". Unknown values fall back to "ff".
+ */
+export function modeFor(p, wanted) {
+  if (!p?.ff) return "ff";
+  return MERGE_MODES.includes(wanted) ? wanted : "ff";
+}
+
+/** Whether a confirmed merge should update the remembered mode. Pull keeps Git's default. */
+export function shouldRemember(entry, p) { return entry !== "pull" && Boolean(p?.ff); }
+
+/** One line under the mode choice: what the graph will show afterwards. null if not a fast-forward. */
+export function ffPreviewLine(p, mode) {
+  if (!p?.ff) return null;
+  if (mode === "no-ff") return `Se creará un commit de merge aunque ${p.target} pueda avanzar en línea recta: quedará visible en el grafo.`;
+  return `${p.target} avanzará a ${short(p.sourceSha)}, sin commit de merge: en el grafo (aquí o en Fork) parecerá que no pasó nada. Elige "${NO_FF_LABEL}" si quieres verlo.`;
+}
+
+/** One line on the result sheet after a fast-forward. */
+export function ffResultLine(target, head) {
+  return `${target} avanzó a ${short(head)}, sin commit de merge; elige "${NO_FF_LABEL}" si quieres verlo en el grafo.`;
+}

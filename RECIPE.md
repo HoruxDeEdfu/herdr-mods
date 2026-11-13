@@ -84,9 +84,10 @@ The panel fills its whole block (tested between 320 and 900 px wide). It is a ca
   - sync with the upstreams;
   - incoming commits (maximum 25 shown);
   - affected files (maximum 40);
-  - the mode (`--ff`, `--no-ff`, `--ff-only`; only when a fast-forward is possible);
+  - the mode (`--ff`, `--no-ff`, `--ff-only`; only when a fast-forward is possible), with one line under it saying what the graph will show: with `--ff`/`--ff-only`, "`<target>` avanzará a `<sha>`, sin commit de merge: en el grafo (aquí o en Fork) parecerá que no pasó nada. Elige "Siempre crear commit de merge" si quieres verlo."; with `--no-ff`, that a merge commit will be created and stay visible. The mode starts on the one last confirmed in that repository (`localStorage`, key `merge-mode:<machine>:<git-common-dir>`, shared by its worktrees), with the note "Modo recordado de tu último merge en este repositorio." Pull never reads or saves it, and when no fast-forward is possible the mode is always `--ff` (so a remembered `--ff-only` can't fail);
   - the exact command.
   - **Blocks if:** uncommitted changes in files the merge touches, anything staged, untracked files that would be overwritten, unsaved files in the editor, unrelated histories or nothing to integrate.
+- **After a fast-forward**, the result sheet adds one line: "`<target>` avanzó a `<sha>`, sin commit de merge; elige "Siempre crear commit de merge" si quieres verlo en el grafo." Without it, clients like Fork look as if nothing happened.
 - **Before running**, everything is recomputed. If any SHA or the state changed (for example, an agent made a commit), it does not merge: it shows the updated preview with the notice "El repositorio cambió…" ("The repository changed…").
 - **Every confirmation is bound to the repository** (root and machine) it was opened in. Switching space or pane never redirects the action.
 - **Conflicts:**
@@ -188,6 +189,7 @@ The panel fills its whole block (tested between 320 and 900 px wide). It is a ca
 - `herdr-app check mods/git-panel` and `herdr-app check mods/git-tabs` pass, and `herdr-app status` shows no errors with the panel open.
 - The **Git** button in the top bar shows the panel. After switching to another space and back, the chosen panel is remembered.
 - In a temporary repository with `main` and `feature/login` ahead: **Merge…** → `feature/login` shows "avanzará n commit(s) (fast-forward posible)" ("will advance n commit(s) (fast-forward possible)"), and on confirming, `main` points to the same commit as `feature/login`.
+- After that fast-forward, the result says "main avanzó a `<sha>`, sin commit de merge…". Merging another branch with **Siempre crear commit de merge** leaves a commit with two parents, and the next fast-forward preview in that repository starts on that mode with "Modo recordado…".
 - With HEAD on `feature/x`, the menu of `main` → `Fusionar feature/x → main…` asks to confirm the checkout, leaves HEAD on `main` and opens the preview with source `feature/x`. No merge happens without the second confirmation.
 - If a commit is made on the source (for example, with `git update-ref`) between the preview and the confirmation, the panel does not merge and shows "El repositorio cambió…" with the new number of commits.
 - Two branches that touch the same line: the preview lists the file as a conflict. On merging, the header shows "Merge en curso" and **Abortar merge** ("Abort merge") (with confirmation) returns HEAD to its previous commit and keeps the local changes that were not touched.
