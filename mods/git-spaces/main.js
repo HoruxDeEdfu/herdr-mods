@@ -9,7 +9,8 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout } from "herdr";
+import { spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout, readTextFile } from "herdr";
+import { readStatus, markerArgs, opFrom, opBadge } from "./gitstate.js"; // git-spaces
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -42,18 +43,6 @@ const CHANGES_EVERY = 2500;
 // git-spaces: reads that write nothing under .git (no index refresh), so they
 // neither wake the watches nor lock the index under an agent's git.
 const QUIET = ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "diff.autoRefreshIndex=false"];
-/** git-spaces: `status --porcelain -z` → files with changes (a rename counts once). */
-function countChanges(out) {
-  const parts = out.split("\0");
-  let n = 0;
-  for (let i = 0; i < parts.length; i++) {
-    const e = parts[i];
-    if (e.length < 4) continue;
-    n++;
-    if (e[0] === "R" || e[0] === "C") i++; // the original path follows
-  }
-  return n;
-}
 
 // What a stored color name looks like on an avatar (the same in every mod
 // that draws space avatars): one strong color per hue, light and dark alike.
@@ -245,17 +234,24 @@ export default class Spaces extends View {
       }
       // The repo's own .git folder names it; a worktree's top differs from it.
       const top = r.stdout.replace(/\n$/, ""), repo = common.stdout.replace(/\n$/, "");
-      const [branch, counts, status] = await Promise.all([
+      const [branch, counts, status, markers] = await Promise.all([
         exec("git", ["symbolic-ref", "-q", "HEAD"], { cwd, on }),
         exec("git", ["rev-list", "--left-right", "--count", "HEAD...@{upstream}"], { cwd, on }),
         // git-spaces: uncommitted changes (staged, modified, untracked), file by file
         // like the Git panel: "normal" would count a new folder as one.
         exec("git", [...QUIET, "status", "--porcelain", "-z", "--untracked-files=all"], { cwd: top, on, timeout: 15000 }).catch(() => null),
+        // git-spaces: where Git leaves its "operation in progress" markers.
+        exec("git", markerArgs(), { cwd: top, on }).catch(() => null),
       ]);
+      const present = markers?.code === 0
+        ? await Promise.all(markers.stdout.split("\n").filter(Boolean).map((p) => readTextFile(p, { on }).then((x) => x != null, () => false)))
+        : [];
+      const st = status?.code === 0 ? readStatus(status.stdout) : null;
       const name = repo.endsWith("/.git") ? base(repo.slice(0, -5)) : base(repo).replace(/\.git$/, "");
       const [ahead, behind] = counts.code === 0 ? counts.stdout.trim().split(/\s+/).map(Number) : [0, 0];
       const info = { name, branch: branch.code === 0 ? branch.stdout.trim().replace(/^refs\/heads\//, "") : "(detached)", ahead, behind, repo: JSON.stringify([on, repo]), linked: repo !== `${top}/.git`,
-        changes: status?.code === 0 ? countChanges(status.stdout) : this.git[key]?.changes ?? null };
+        changes: st ? st.changes : this.git[key]?.changes ?? null,
+        conflicts: st ? st.conflicts : this.git[key]?.conflicts ?? 0, op: markers ? opFrom(present) : this.git[key]?.op ?? null };
       this.git[key] = info;
       if (!on) { this.watch(repo, cx); this.watchTree(top, key, cx); }
     } catch {
@@ -434,6 +430,8 @@ export default class Spaces extends View {
       .text_size(11.5)
       .text_color(t.dim)
       .when(Boolean(where), (el) => el.child(div().min_w(0).truncate().child(where)))
+      // git-spaces: a merge/rebase/… stopped here, or conflicts, before anything else.
+      .when(Boolean(opBadge(g.op, g.conflicts)), (el) => { const b = opBadge(g.op, g.conflicts); return el.child(div().id(`op-${g.repo}-${g.branch}-${name}`).flex_none().text_color(t.blocked).tooltip(b.tip).child(b.text)); })
       // git-spaces: files with uncommitted changes, before the commits to push.
       .when(g.changes > 0, (el) => el.child(div().flex_none().text_color(t.ansi3).child(`\u25cf${g.changes}`)))
       .when(g.ahead > 0, (el) => el.child(div().flex_none().text_color(t.ansi2).child(`\u2191${g.ahead}`)))

@@ -10,7 +10,7 @@ eliminar ramas, y hacer merge con vista previa desde dos puntos de entrada.
 | Ruta | Qué es |
 |---|---|
 | `mods/git-panel/` | Este mod (nuevo). |
-| `mods/git-spaces/` | Copia del mod `spaces` de Herdr que añade **●n** (archivos con cambios sin commit) junto a ↑↓ en la lista de espacios. |
+| `mods/git-spaces/` | Copia del mod `spaces` de Herdr que añade **●n** (archivos con cambios sin commit) junto a ↑↓ en la lista de espacios, y **⚠ merge·2** en rojo si en ese espacio hay una operación a medias (merge, rebase, cherry-pick, revert, bisect) o archivos en conflicto. |
 | `mods/git-tabs/` | Copia del mod `tabs` de Herdr con un botón **Git** añadido. |
 | `layouts/main-code.json` | Tu layout. Se añadió el bloque `git` a la pila `panel-body` y la barra superior usa `git-tabs`. |
 | `layouts/main-code.json.bak-gitpanel-*` | Copia del layout antes del cambio. |

@@ -4,7 +4,7 @@ Mods for [Herdr Desktop](https://herdr.dev) that turn its right panel into a sma
 
 - **Git panel** (`mods/git-panel`): a compact Git client next to Files and Changes. Changes, Branches and History tabs; merges with a real conflict simulation before anything runs, which say when a fast-forward will leave no merge commit and remember the merge mode per repository; pull, push, cherry-pick, revert, conflict resolution, worktrees; a per-project account switcher for people with more than one GitHub account; and a log of every command it ran. It refreshes on its own when an agent commits or moves branches, even from another worktree. It never stashes, resets, cleans or force-pushes.
 - **Files editor** (`mods/code-files`): the Files panel with editing, unsaved drafts and diffs. The Git panel uses it to open files and to warn about unsaved edits before a checkout or merge.
-- **Spaces list** (`mods/git-spaces`): Herdr's spaces sidebar, plus **●n**, the number of files with uncommitted changes in each space's worktree, next to the ↑ahead ↓behind commits it already shows.
+- **Spaces list** (`mods/git-spaces`): Herdr's spaces sidebar, plus **●n**, the number of files with uncommitted changes in each space's worktree, next to the ↑ahead ↓behind commits it already shows. A space with a merge, rebase, cherry-pick, revert or bisect stopped in it, or with conflicted files, shows a red **⚠ merge·2** (operation · conflicts), so you see it without opening the Git panel there.
 - **Tab bar** (`mods/git-tabs`): Herdr's tab bar with a **Git** button.
 - **Layout** (`layouts/main-code.json`): Herdr's main layout with all four wired in.
 
