@@ -8,6 +8,7 @@ import { button, pill, notice, spinner, relTime, basename, emptyState, sectionTi
 import { renderSheet } from "./sheets.js";
 import { diffView } from "./diffview.js";
 import { ffMarkText } from "../git/queries.js";
+import { autoFetchLine } from "../git/merge-flow.js";
 
 const mono = () => settings().font_family ?? "JetBrains Mono";
 const tilde = (p) => { const h = home(); return p && h && p.startsWith(h + "/") ? "~" + p.slice(h.length) : p; };
@@ -34,7 +35,9 @@ function header(v, t) {
   const up = head?.upstream && !head.gone ? head.upstream : null;
   const behind = up ? head.behind : 0, ahead = up ? head.ahead : 0;
   const actions = h_flex().gap(4).flex_none()
-    .child(button(t, "h-fetch", narrow ? "↻" : "Fetch", (_e, cx) => v.fetch(cx), { disabled: noRepo || busy, tooltip: "Fetch: trae lo nuevo del remoto sin tocar tus ramas ni archivos (tecla f)", small: true }))
+    .child(button(t, "h-fetch", narrow ? (v.autoFetchMin ? `↻·${v.autoFetchMin}` : "↻") : v.autoFetchMin ? `Fetch · ${v.autoFetchMin}m` : "Fetch", (_e, cx) => v.fetch(cx), { disabled: noRepo || busy, small: true,
+      tooltip: `Fetch: trae lo nuevo del remoto sin tocar tus ramas ni archivos (tecla f)\n${autoFetchLine(v.autoFetchMin, d && v.autoFetchState[v.fetchKey(d)], Date.now())}` })
+      .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); if (!noRepo) v.autoFetchMenu(cx); }))
     .child(button(t, "h-pull", behind ? (narrow ? `↓${behind}` : `Pull ↓${behind}`) : (narrow ? "↓" : "Pull"), (_e, cx) => v.startPull(cx), { kind: behind ? "primary" : undefined, disabled: noRepo || busy || !up, tooltip: up ? `Pull: fetch e integrar ${up} en ${head.name} (con vista previa)` : "La rama actual no sigue a ninguna remota", small: true }))
     .child(button(t, "h-push", ahead ? (narrow ? `↑${ahead}` : `Push ↑${ahead}`) : up ? (narrow ? "↑" : "Push") : (narrow ? "↑" : "Publicar"), (_e, cx) => v.startPush(cx), { kind: ahead && !behind ? "primary" : undefined, disabled: noRepo || busy || !head, tooltip: up ? `Push: publicar ${head.name} en ${up}` : head ? `Publicar ${head.name} en el remoto` : "HEAD desacoplado", small: true }))
     .child(button(t, "h-merge", "Merge…", (_e, cx) => v.startMerge(cx), { disabled: noRepo || busy || d?.status.detached, tooltip: d?.status.head ? `Fusionar otra rama en ${d.status.head} (tecla m)` : "Cambia a una rama para fusionar", small: true }))

@@ -46,6 +46,7 @@ No se modificaron `files`, `changes` ni ningún mod o layout de Herdr.
   - si es un fast-forward limpio (tus cambios locales no chocan), lo ejecuta directamente y lo notifica;
   - si las ramas divergieron o algo choca, abre la vista previa segura del merge.
 - **Editor Files después de un checkout o merge:** las pestañas sin cambios siguen al disco solas. Si una pestaña con texto sin guardar ve cambiar su archivo y ese texto es una versión que Git ya guarda (la de otra rama), la barra lo dice y **Reload** recarga sin preguntar, porque no se pierde nada. Nunca recarga sola; una edición real conserva la barra roja.
+- **Fetch automático (opcional):** clic derecho en **Fetch** → Desactivado (por defecto) o cada 5, 15 o 30 minutos. Solo el repositorio que muestra el panel, nunca con `--prune` ni pidiendo credenciales, y queda en el Log. Si falla, se pausa en ese repo y lo avisa; un Fetch manual que funcione lo reanuda. El botón muestra `Fetch · 15m` mientras está activo.
 - **Notificaciones:** los éxitos y los avisos informativos salen como notificaciones nativas de Herdr. Las advertencias y los errores se quedan en el panel hasta que los cierras.
 - **Push** (barra de arriba): revisión de los commits que se van a publicar y confirmación. Nunca hace force push. Si el remoto tiene commits que tú no tienes, lo explica y ofrece Pull.
 - **Menú de una rama:**

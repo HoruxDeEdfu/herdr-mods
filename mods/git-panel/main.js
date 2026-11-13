@@ -102,6 +102,9 @@ export default class GitPanel extends View {
       input.on("blur", () => this.typing.delete(name));
     }
     this.graphOn = this.stored("graph") !== "0";
+    // Optional automatic fetch (off unless chosen): minutes, and per repository { last, paused }.
+    this.autoFetchMin = F.autoFetchMinutes(this.stored("autoFetch"));
+    this.autoFetchState = {};
     this.branchScroll = VirtualListScrollHandle.new();
     this.refresh(cx);
     cx.timer.every(700, (cx) => this.tick(cx));
@@ -195,6 +198,7 @@ export default class GitPanel extends View {
     if (this.banner && this.banner.level !== "block" && now - this.banner.at > 9000) { this.banner = null; cx.notify(); }
     if (this.tab === "history" && visible && !this.history.done && (this.historyEnd ?? 0) >= this.history.commits.length - 20) this.moreHistory(cx);
     if (this.loading || this.op) return;
+    if (this.autoFetchTick(now, cx)) return;
     const remote = Boolean(this.context().on);
     // Hidden, file events still refresh (more slowly): the tab bar's Git badge reads the result.
     if (this.stale && now - this.stale >= 400 && now - this.lastRefresh >= (visible ? 1500 : 5000)) { this.stale = 0; this.refresh(cx); return; }
@@ -555,18 +559,52 @@ export default class GitPanel extends View {
   unpin(cx) { this.pinned = null; this.refresh(cx); cx.notify(); }
 
   // ---------- fetch ----------
-  fetch(cx) {
+  fetch(cx, auto = false) {
     const d = this.data;
     if (!d) return;
-    if (!d.remotes.length) { this.say("info", "Este repositorio no tiene remotos."); cx.notify(); return; }
+    if (!d.remotes.length) { if (!auto) { this.say("info", "Este repositorio no tiene remotos."); cx.notify(); } return; }
     // One remote: fetch it. Several: all of them (git fetch --all). Never --prune unasked.
     const remote = d.remotes.length === 1 ? d.remotes[0] : null;
+    const st = (this.autoFetchState[this.fetchKey(d)] ??= { last: 0, paused: false });
+    st.last = Date.now();
     cx.spawn(async (cx) => {
-      await this.act(cx, "Fetch", async () => {
-        try { await O.fetch(this.git(d.on), d.repo, remote ?? undefined); this.say("ok", `Fetch completado${remote ? ` (${remote})` : " (todos los remotos)"}.`); }
-        catch (e) { this.say("block", explain(e)); }
+      await this.act(cx, auto ? "Fetch automático" : "Fetch", async () => {
+        try {
+          await O.fetch(this.git(d.on), d.repo, remote ?? undefined);
+          st.paused = false;
+          if (!auto) this.say("ok", `Fetch completado${remote ? ` (${remote})` : " (todos los remotos)"}.`);
+        } catch (e) {
+          if (auto) { st.paused = true; this.say("warn", `Fetch automático pausado en este repositorio: ${explain(e)} Pulsa Fetch para reintentar.`); }
+          else this.say("block", explain(e));
+        }
       });
     });
+  }
+
+  fetchKey(d) { return JSON.stringify([d.on ?? null, d.repo.commonDir]); }
+
+  /** Starts an automatic fetch of the shown repository when one is due. */
+  autoFetchTick(now, cx) {
+    const d = this.data;
+    if (!d || !this.autoFetchMin || this.sheet?.running) return false;
+    // First sight of a repository: count from now, so flipping spaces doesn't fetch them all.
+    const st = (this.autoFetchState[this.fetchKey(d)] ??= { last: now, paused: false });
+    if (!F.autoFetchDue({ minutes: this.autoFetchMin, state: st, now, busy: Boolean(this.op), remotes: d.remotes.length })) return false;
+    this.fetch(cx, true);
+    return true;
+  }
+
+  /** Right-click on Fetch: how often to fetch by itself. */
+  autoFetchMenu(cx) {
+    const items = F.AUTO_FETCH_CHOICES.map((m) => ({ id: `af-${m}`, label: `${this.autoFetchMin === m ? "✓ " : ""}${m ? `Cada ${m} minutos` : "Desactivado"}`,
+      run: (cx) => {
+        this.autoFetchMin = m; this.store("autoFetch", String(m));
+        const d = this.data;
+        if (m && d) { const st = (this.autoFetchState[this.fetchKey(d)] ??= { last: 0, paused: false }); st.last = 0; st.paused = false; } // first one now
+        this.say("info", m ? `Fetch automático cada ${m} min en el repositorio que muestre el panel. Nunca hace --prune ni pide credenciales.` : "Fetch automático desactivado.");
+        cx.notify();
+      } }));
+    this.openMenu("Fetch automático", items, cx);
   }
 
   // ---------- merge, entry A (and "Fusionar X en la actual") ----------

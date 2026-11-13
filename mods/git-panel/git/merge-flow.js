@@ -362,3 +362,26 @@ export function summaryFor(d) {
   const s = d.status.summary;
   return { root: d.repo.root, on: d.on ?? null, total: s.total, conflicts: s.conflicts, op: d.ops?.[0] ?? null, head: d.status.head ?? null };
 }
+
+// ---------- optional automatic fetch ----------
+/** Minutes offered in the Fetch button's menu; 0 = off (the default). */
+export const AUTO_FETCH_CHOICES = [0, 5, 15, 30];
+export const autoFetchMinutes = (stored) => (AUTO_FETCH_CHOICES.includes(Number(stored)) ? Number(stored) : 0);
+
+/**
+ * Is an automatic fetch due for the repository the panel shows? Never while
+ * another operation runs, without remotes, or after a failure (paused until
+ * a manual Fetch works). `state`: { last, paused } for that repository.
+ */
+export function autoFetchDue({ minutes, state, now, busy, remotes }) {
+  if (!minutes || busy || !remotes || !state || state.paused) return false;
+  return now - (state.last ?? 0) >= minutes * 60000;
+}
+
+/** The Fetch button's tooltip line about it. */
+export function autoFetchLine(minutes, state, now) {
+  if (!minutes) return "Fetch automático desactivado (clic derecho para activarlo)";
+  if (state?.paused) return `Fetch automático pausado en este repo tras un error. Pulsa Fetch para reintentar.`;
+  const ago = state?.last ? Math.round((now - state.last) / 60000) : null;
+  return `Fetch automático cada ${minutes} min${ago == null ? "" : ` · el último hace ${ago} min`} (clic derecho para cambiarlo)`;
+}
