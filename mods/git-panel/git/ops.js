@@ -33,6 +33,12 @@ export async function deleteBranch(git, repo, name, force = false) {
   return ok(await git.write(repo.root, args, { lock: repo.commonDir, label: `Eliminar ${name}` }), args);
 }
 
+/** Deletes a branch on a remote: git push <remote> --delete refs/heads/<branch>. Not a force push. */
+export async function deleteRemoteBranch(git, repo, remote, branch) {
+  const args = ["push", remote, "--delete", `refs/heads/${branch}`];
+  return ok(await git.write(repo.root, args, { lock: repo.commonDir, network: true, timeout: 180000, label: `Eliminar ${remote}/${branch} del remoto` }), args);
+}
+
 export async function fetch(git, repo, remote, { prune = false } = {}) {
   const args = ["fetch", ...(prune ? ["--prune"] : []), remote ?? "--all"];
   return ok(await git.write(repo.root, args, { lock: repo.commonDir, network: true, timeout: 180000, label: "Fetch" }), args);

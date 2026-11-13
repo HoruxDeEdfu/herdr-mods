@@ -119,6 +119,7 @@ The panel fills its whole block (tested between 320 and 900 px wide). It is a ca
   - Rename.
   - Delete with `-d`. If the branch has unmerged commits, it asks for a second confirmation for `-D`.
   - Create a local branch that tracks a remote one.
+  - **Delete a branch on its remote** (menu of a remote branch, `Eliminar origin/x del remoto…`, in `blocked`): a sheet that first fetches that remote (logged), then shows the branch's commit and: a block if it is the remote's default branch (`refs/remotes/<remote>/HEAD`; then no warnings); warnings for local branches that track it (they stay) and for everyone using the remote; and, when commits exist only there (`rev-list --count <ref> --not --exclude=<ref> --all`), a required checkbox "Entiendo que esos commits dejarán de estar en el remoto". Right before running, `git ls-remote --heads <remote> refs/heads/<x>` (logged, no prompts): if the branch moved since the sheet opened it refuses with both hashes; if it is already gone it says so. Then `git push <remote> --delete refs/heads/<x>` — not a force push; local branches never change.
 - **Worktrees:**
   - In Herdr's folder: `~/.herdr/worktrees/<repo>/<rama saneada>`.
   - Create from a branch or from a commit.
@@ -205,6 +206,7 @@ The panel fills its whole block (tested between 320 and 900 px wide). It is a ca
 - Changes: + / − move files between groups (including a deletion and a name with ñ and spaces), the diff shows line numbers and Commit creates the commit on the current branch.
 - A file with three separate edits: selecting fragment 2 and **Stage fragmento** leaves only that change in `git diff --cached`, the file unchanged; **Unstage fragmento** in the staged diff takes it back out.
 - With `qa` 3 commits behind `origin/qa` and HEAD on `main`, the menu of `qa` → **Actualizar ↓3** advances it and leaves HEAD and the files intact; if `qa` also has a commit of its own, it refuses and explains why.
+- With a temporary bare `origin`: deleting `origin/old-experiment` (a commit only there) is disabled until the checkbox is ticked, then removes it from the bare repo; `origin/main` is blocked; if a teammate pushes to `origin/feature` after the sheet opened, the panel refuses with "Alguien actualizó…" and deletes nothing.
 - Rejected push (the remote has a new commit) shows "El remoto rechazó el push…" ("The remote rejected the push…") and **Pull…**; Pull fetches and opens the preview with `origin/<rama>`.
 - History with "Todas las ramas" draws the forks and merges with colored lanes, and `g` hides it.
 - A cherry-pick with a conflict can be resolved with "Usar el commit del cherry-pick" ("Use the cherry-pick's commit") and **Continuar**, and ends with a new commit and a clean state.

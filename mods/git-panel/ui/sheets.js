@@ -38,6 +38,7 @@ export function renderSheet(v, t, cx) {
     case "diff": return diffSheet(v, t, s);
     case "pick-commit": return pickCommitSheet(v, t, s);
     case "ff": return ffSheet(v, t, s);
+    case "remote-delete": return remoteDeleteSheet(v, t, s);
     case "conflict": return conflictSheet(v, t, s);
     case "account": return accountSheet(v, t, s);
   }
@@ -354,4 +355,32 @@ function accountSheet(v, t, s) {
   return frame(v, t, s.title, content, h_flex().gap(8)
     .child(button(t, "acc-cancel", "Cancelar", (_e, cx) => v.closeSheet(cx), { disabled: s.running }))
     .child(button(t, "acc-go", s.running ? "Fijando…" : "Fijar", (_e, cx) => v.confirmPin(cx), { kind: "primary", disabled: s.running || Boolean(v.op) })), a.remote ? `${a.remote} · ${a.host ?? ""}` : null);
+}
+
+// ---------- delete a branch on its remote ----------
+function remoteDeleteSheet(v, t, s) {
+  const title = `Eliminar ${s.name} del remoto`;
+  const sub = "Borra la rama en el servidor para todo el equipo. Tus ramas locales y sus commits no cambian.";
+  if (s.loading) return frame(v, t, title, loadingRow(t, `Actualizando ${s.remote} (fetch) y comprobando la rama…`), null, sub);
+  const c = s.check ?? { blocks: [], warnings: [] };
+  const blocked = c.blocks.length > 0 || !s.check;
+  const content = v_flex().gap(10)
+    .when(Boolean(s.ref), (e) => e.child(h_flex().gap(8).items_center().text_size(12)
+      .child(pill(t, s.name, t.ansi5)).child(div().font_family(mono()).text_size(11).text_color(t.dim).child(s.ref.short))
+      .child(div().min_w(0).truncate().text_color(t.muted).child(s.ref.subject))))
+    .when(Boolean(s.error), (e) => e.child(notice(t, "block", s.error)))
+    .children(c.blocks.map((b) => notice(t, "block", b.text, `rd-b-${b.id}`)))
+    .children(c.warnings.map((w) => notice(t, "warn", w.text, `rd-w-${w.id}`)))
+    .when(Boolean(c.needsSecond) && !blocked, (e) => e.child(h_flex().id("rd-ack").gap(8).px(8).h(30).items_center().rounded(6).cursor_pointer()
+      .border_1().border_color(s.ack ? t.blocked + "88" : t.border).hover((st) => st.bg(t.hover))
+      .on_click((_e, cx) => { s.ack = !s.ack; cx.notify(); })
+      .child(div().text_color(s.ack ? t.blocked : t.dim).child(s.ack ? "☑" : "☐"))
+      .child(div().text_size(12).child("Entiendo que esos commits dejarán de estar en el remoto"))))
+    .when(!blocked, (e) => e.child(div().font_family(mono()).text_size(11).text_color(t.dim).child(c.command))
+      .child(div().text_size(11).text_color(t.dim).child("Justo antes se pregunta al remoto dónde está la rama: si alguien la actualizó, no se elimina. Nunca es un force push.")));
+  const footer = h_flex().gap(8)
+    .child(button(t, "rd-cancel", "Cancelar", (_e, cx) => v.closeSheet(cx), { disabled: s.running }))
+    .child(button(t, "rd-go", s.running ? "Eliminando…" : "Eliminar del remoto", (_e, cx) => v.confirmDeleteRemote(cx),
+      { kind: "danger", disabled: blocked || s.running || Boolean(v.op) || (c.needsSecond && !s.ack) }));
+  return frame(v, t, title, content, footer, sub);
 }

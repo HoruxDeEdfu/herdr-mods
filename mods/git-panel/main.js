@@ -544,6 +544,9 @@ export default class GitPanel extends View {
       items.push({ id: "hist", label: "Ver en History", run: (cx) => this.showInHistory(ref.oid, cx) });
       items.push({ sep: true, id: "s1" });
       items.push({ id: "new", label: "Nueva rama desde aquí…", disabled: busy, run: (cx) => this.askCreate(ref.name, cx) });
+      items.push({ sep: true, id: "s2" });
+      items.push({ id: "delete-remote", label: `Eliminar ${ref.name} del remoto…`, danger: true, disabled: busy,
+        hint: `git push ${ref.remote} --delete: borra la rama en ${ref.remote} para todo el equipo; tus ramas locales no cambian`, run: (cx) => this.askDeleteRemote(ref.name, cx) });
     } else {
       items.push({ id: "hist", label: "Ver en History", run: (cx) => this.showInHistory(ref.oid, cx) });
       items.push({ id: "compare", label: `Comparar con ${head ?? "HEAD"}`, run: (cx) => this.compare(ref.name, cx) });
@@ -980,6 +983,51 @@ export default class GitPanel extends View {
       action: "Eliminar rama", danger: true, run: (cx) => this.deleteBranch(name, false, cx) };
     cx.notify();
   }
+  /**
+   * Delete a branch on its remote. Fetches that remote first so the check uses
+   * fresh refs; right before deleting, asks the remote where the branch is and
+   * refuses if someone pushed to it meanwhile. Never a force push.
+   */
+  askDeleteRemote(name, cx) {
+    const remote = this.data?.refs.find((r) => r.type === "remote" && r.name === name)?.remote;
+    if (!remote) return;
+    this.sheet = { ctx: this.bound(), kind: "remote-delete", name, remote, loading: true, ack: false };
+    const sheet = this.sheet;
+    cx.spawn(async (cx) => {
+      try {
+        let f = await this.fresh(sheet);
+        await O.fetch(f.git, f.repo, remote);
+        f = await this.fresh(sheet);
+        const ref = f.refs.find((r) => r.type === "remote" && r.name === name) ?? null;
+        const [head, only] = await Promise.all([Q.remoteHead(f.git, f.repo.root, remote), ref ? Q.onlyIn(f.git, f.repo.root, ref.ref) : 0]);
+        sheet.ref = ref; sheet.sha = ref?.oid ?? null;
+        sheet.check = F.remoteDeleteCheck({ refs: f.refs, remotes: await Q.remotes(f.git, f.repo.root), ref, head, only });
+      } catch (e) { sheet.error = explain(e); }
+      sheet.loading = false; cx.notify();
+    });
+    cx.notify();
+  }
+
+  confirmDeleteRemote(cx) {
+    const s = this.sheet;
+    if (!s?.check || s.running || s.check.blocks.length || (s.check.needsSecond && !s.ack)) return;
+    s.running = true; s.error = null; cx.notify();
+    cx.spawn(async (cx) => {
+      await this.act(cx, `Eliminar ${s.name} del remoto`, async () => {
+        try {
+          const f = await this.fresh(s);
+          const now = await Q.remoteBranchSha(f.git, f.repo.root, s.check.remote, s.check.branch);
+          if (now === null) { if (this.sheet === s) this.sheet = null; this.say("info", `${s.name} ya no existe en ${s.check.remote}: alguien la eliminó antes.`); return; }
+          if (now !== s.sha) { s.error = `Alguien actualizó ${s.name} en el remoto (ahora en ${now.slice(0, 7)}, antes ${s.sha?.slice(0, 7)}). No se eliminó: vuelve a abrir esta acción para revisar los commits nuevos.`; return; }
+          await O.deleteRemoteBranch(f.git, f.repo, s.check.remote, s.check.branch);
+          if (this.sheet === s) this.sheet = null;
+          this.say("ok", `${s.name} eliminada del remoto. Tus ramas locales no cambiaron.`);
+        } catch (e) { s.error = explain(e); }
+        finally { s.running = false; }
+      });
+    });
+  }
+
   deleteBranch(name, force, cx) {
     const s = this.sheet;
     cx.spawn(async (cx) => {

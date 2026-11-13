@@ -63,6 +63,11 @@ export class Runner {
     return run;
   }
 
+  /** A read that talks to a remote (ls-remote): no prompts, and always in the log. */
+  remoteRead(cwd, args, { timeout = 60000, label } = {}) {
+    return this.raw(cwd, this.networkArgv(args), { timeout, kind: "network", log: true, label });
+  }
+
   isBusy(lock) { return this.busy.get(lock) ?? null; }
 
   // Fetch/pull/push without a terminal: never wait on a password prompt.

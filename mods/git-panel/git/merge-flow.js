@@ -385,3 +385,24 @@ export function autoFetchLine(minutes, state, now) {
   const ago = state?.last ? Math.round((now - state.last) / 60000) : null;
   return `Fetch automático cada ${minutes} min${ago == null ? "" : ` · el último hace ${ago} min`} (clic derecho para cambiarlo)`;
 }
+
+// ---------- deleting a branch on a remote ----------
+/**
+ * Before `git push <remote> --delete <branch>`. `ref`: the remote-tracking ref
+ * (after a fresh fetch); `head`: the remote's default branch ("origin/main");
+ * `only`: commits no other ref has. Returns { blocks, warnings, needsSecond, remote, branch, command }.
+ */
+export function remoteDeleteCheck({ refs, remotes, ref, head, only }) {
+  const blocks = [], warnings = [];
+  const remote = ref?.remote ?? null, branch = ref ? ref.name.slice(remote.length + 1) : null;
+  if (!ref || !remotes.includes(remote)) blocks.push({ id: "missing", text: "Esa rama ya no existe en el remoto (según el último fetch)." });
+  else {
+    if (head && head === ref.name) blocks.push({ id: "default", text: `${ref.name} es la rama principal de ${remote}. El panel no la elimina.` });
+    const tracking = refs.filter((r) => r.type === "local" && r.upstream === ref.name).map((r) => r.name);
+    if (tracking.length) warnings.push({ id: "tracked", text: `${tracking.join(", ")} la sigue${tracking.length > 1 ? "n" : ""}: la rama local se conserva con sus commits y su upstream quedará como "ya no existe".` });
+    if (only > 0) warnings.push({ id: "only", text: `${only} commit(s) solo están en ${ref.name}: ninguna otra rama ni tag los contiene. Al eliminarla dejarán de estar en el remoto para todo el equipo.` });
+    warnings.push({ id: "team", text: `Afecta a todos los que usan ${remote}: quien la tenga descargada la verá desaparecer en su próximo fetch con --prune.` });
+  }
+  if (blocks.length) warnings.length = 0; // nothing to weigh when it can't happen
+  return { blocks, warnings, needsSecond: only > 0 && !blocks.length, remote, branch, command: branch ? `git push ${remote} --delete refs/heads/${branch}` : "" };
+}

@@ -242,3 +242,26 @@ export async function rebaseInfo(git, root, read) {
   }
   return null;
 }
+
+// ---------- deleting a branch on a remote ----------
+
+/** The remote's default branch as "origin/main" (from refs/remotes/<remote>/HEAD), or null. */
+export async function remoteHead(git, root, remote) {
+  const r = await git.read(root, ["symbolic-ref", "-q", "--short", `refs/remotes/${remote}/HEAD`], { expected: [0, 1, 128] });
+  return r.code === 0 ? r.stdout.trim() || null : null;
+}
+
+/** Commits reachable from `ref` and from no other ref (branches, remotes, tags, HEAD). */
+export async function onlyIn(git, root, ref) {
+  const r = await git.readOk(root, ["rev-list", "--count", ref, "--not", `--exclude=${ref}`, "--all"]);
+  return Number(r.trim()) || 0;
+}
+
+/** Where `refs/heads/<branch>` is on the remote right now (asks the remote), or null if it isn't there. */
+export async function remoteBranchSha(git, root, remote, branch) {
+  const args = ["ls-remote", "--heads", remote, `refs/heads/${branch}`];
+  const r = await git.remoteRead(root, args, { label: `Comprobar ${remote}/${branch}` });
+  if (r.code !== 0) throw new GitError(r, args);
+  const line = r.stdout.split("\n").find((l) => l.endsWith(`\trefs/heads/${branch}`));
+  return line ? line.split("\t")[0] : null;
+}

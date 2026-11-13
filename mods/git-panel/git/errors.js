@@ -17,6 +17,8 @@ const RULES = [
   [/timed out|timeout/i, "La operación tardó demasiado y se detuvo."],
   [/No changes - did you forget to use 'git add'|nothing to commit|The previous cherry-pick is now empty/i, "Después de resolver, este commit ya no cambia nada. Git no puede continuar con un commit vacío: aborta, o termínalo desde la terminal (git rebase --skip lo omite)."],
   [/patch does not apply|while searching for:|corrupt patch/i, "El archivo cambió desde que se mostró el diff. Se actualizó: vuelve a elegir el fragmento."],
+  [/remote rejected.*(protected|deletion of the current branch|refusing to delete)|protected branch|cannot delete/i, "El remoto rechazó eliminar la rama (puede estar protegida o ser su rama principal). No se cambió nada."],
+  [/unable to delete '[^']*': remote ref does not exist/i, "La rama ya no existe en el remoto: alguien la eliminó antes."],
   [/CONFLICT/, "El merge tiene conflictos. Resuélvelos o aborta el merge."],
   [/not a git repository/i, "Esta carpeta no es un repositorio Git."],
 ];

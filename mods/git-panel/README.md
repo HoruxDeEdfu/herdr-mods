@@ -52,6 +52,7 @@ No se modificaron `files`, `changes` ni ningún mod o layout de Herdr.
 - **Menú de una rama:**
   - Rama actual: **Pull** y **Push**.
   - Otra rama: **Actualizar ↓n** (fast-forward a su upstream sin cambiar de rama; si divergió, te lo dice) y **Push ↑n**.
+  - Rama remota: **Eliminar origin/x del remoto…**. Primero hace fetch de ese remoto y muestra el commit de la rama. No permite borrar la rama principal del remoto. Avisa si alguna rama local la sigue (se conserva) y, si tiene commits que no están en ninguna otra rama, pide marcar "Entiendo que esos commits dejarán de estar en el remoto". Justo antes pregunta al remoto (`ls-remote`): si alguien la actualizó, no la borra. Usa `git push origin --delete`, nunca force push, y tus ramas locales no cambian.
   - Merge con flechas origen → destino: `Fusionar dev → main…` (cambia a main, con confirmación) y `Fusionar main → dev…` (en la rama actual).
 - **Diffs desde History y Compare:** clic en un archivo del detalle de un commit o de una comparación.
 - **History, grafo:** carriles de color con bifurcaciones y merges (círculo hueco = commit de merge). Se oculta con "Ocultar grafo" o la tecla `g`, y desaparece solo en paneles de menos de 380 px.
