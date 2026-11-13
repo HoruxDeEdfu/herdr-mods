@@ -47,3 +47,49 @@ export function conflictRows(text) {
   if (rows.length && rows[rows.length - 1].text === "" && rows[rows.length - 1].kind === " ") rows.pop();
   return { rows, cut: false };
 }
+
+// ---------- hunks: stage / unstage part of a file ----------
+const HUNK = /^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@/;
+
+/**
+ * A unified diff of ONE file split into its header (diff --git … +++ …) and
+ * hunks: [{ header, lines, adds, dels }]. `lines` includes the @@ line and
+ * any "\ No newline at end of file" that belongs to it.
+ */
+export function splitHunks(text) {
+  const header = [], hunks = [];
+  let cur = null;
+  const lines = (text ?? "").split("\n");
+  if (lines.length && lines[lines.length - 1] === "") lines.pop();
+  for (const line of lines) {
+    if (HUNK.test(line)) { cur = { header: line, lines: [line], adds: 0, dels: 0 }; hunks.push(cur); continue; }
+    if (!cur) { header.push(line); continue; }
+    if (line.startsWith("diff --git ")) break; // a second file: not ours
+    cur.lines.push(line);
+    if (line[0] === "+") cur.adds++; else if (line[0] === "-") cur.dels++;
+  }
+  return { header, hunks };
+}
+
+/** Which hunks can be staged on their own: text diffs of a file that exists on both sides. */
+export function canSplit(text) {
+  const { header, hunks } = splitHunks(text);
+  if (!hunks.length) return false;
+  if (header.some((l) => /^(Binary files|GIT binary patch|new file mode|deleted file mode|rename from|similarity index)/.test(l))) return false;
+  return header.some((l) => l.startsWith("--- ")) && header.some((l) => l.startsWith("+++ "));
+}
+
+/** A patch with the file's header and only hunk `i`, for `git apply --cached [--reverse]`. */
+export function hunkPatch(text, i) {
+  const { header, hunks } = splitHunks(text);
+  const h = hunks[i];
+  if (!h) throw new Error(`No existe el fragmento ${i + 1}.`);
+  return [...header, ...h.lines].join("\n") + "\n";
+}
+
+/** Row index of each hunk's @@ line in diffRows(text).rows (same order). */
+export function hunkRowIndexes(rows) {
+  const out = [];
+  rows.forEach((r, i) => { if (r.kind === "@" && r.b === undefined) out.push(i); });
+  return out;
+}

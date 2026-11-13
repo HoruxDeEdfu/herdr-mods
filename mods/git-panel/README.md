@@ -35,6 +35,7 @@ No se modificaron `files`, `changes` ni ningún mod o layout de Herdr.
 - **Changes:**
   - Grupos: Conflictos, En stage, Modificados y Sin seguimiento, con +/− líneas por archivo.
   - Clic en un archivo: muestra su diff debajo.
+  - **Por fragmentos:** en el diff de un archivo modificado aparece "Fragmento n de m" con ‹ › (o clic en la línea `@@`) y **Stage fragmento**; en el diff en stage, **Unstage fragmento**. Solo cambia el stage (`git apply --cached`), nunca el archivo. Si el archivo cambió desde que se mostró el diff, no aplica nada y lo actualiza.
   - **+** / **−**: stage o unstage de un archivo. "Stage todo" y "Unstage todo" por grupo. Unstage nunca toca el archivo.
   - **↗** o doble clic: abre el archivo en tu editor Files.
   - **✓** en un conflicto: lo marca como resuelto. Si aún tiene marcadores `<<<<<<<`, pide confirmación.

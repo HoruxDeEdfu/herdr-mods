@@ -13,7 +13,7 @@ import * as Q from "./git/queries.js";
 import * as O from "./git/ops.js";
 import * as F from "./git/merge-flow.js";
 import * as A from "./git/accounts.js";
-import { diffRows, hasConflictMarkers, conflictRows } from "./git/diff.js";
+import { diffRows, hasConflictMarkers, conflictRows, splitHunks, canSplit, hunkPatch, hunkRowIndexes } from "./git/diff.js";
 import { layoutGraph } from "./git/graph.js";
 import { explain } from "./git/errors.js";
 import { renderPanel } from "./ui/panel.js";
@@ -94,6 +94,8 @@ export default class GitPanel extends View {
     this.changeSel = null; // { path, which }
     this.diff = null;      // { key, rows, adds, dels, binary, cut, loading, error }
     this.historyScroll = VirtualListScrollHandle.new();
+    this.diffScroll = VirtualListScrollHandle.new();
+    this.hunkSel = 0;
     this.typing = new Set();
     for (const [name, input] of [["filter", this.filter], ["pick", this.pickInput], ["name", this.nameInput], ["commit", this.commitInput], ["idName", this.idName], ["idEmail", this.idEmail]]) {
       input.on("focus", () => this.typing.add(name));
@@ -1042,9 +1044,54 @@ export default class GitPanel extends View {
     cx.spawn(async (cx) => {
       try {
         const text = await Q.fileDiff(this.git(d.on), d.repo.root, sel.path, sel.which);
-        if (this.changeSel === sel) this.diff = { key, ...diffRows(text) };
+        if (this.changeSel === sel) {
+          if (this.diff?.key !== key) this.hunkSel = 0;
+          // Hunks can be (un)staged one by one in a text diff of the work tree or the stage.
+          const split = !d.on && (sel.which === "unstaged" || sel.which === "staged") && canSplit(text);
+          this.diff = { key, text, which: sel.which, path: sel.path, split, ...diffRows(text) };
+          this.diff.hunks = split ? hunkRowIndexes(this.diff.rows) : [];
+          this.hunkSel = Math.min(this.hunkSel, Math.max(0, this.diff.hunks.length - 1));
+          this.diff.hl = this.diff.hunks[this.hunkSel];
+        }
       } catch (e) { if (this.changeSel === sel) this.diff = { key, rows: [], error: explain(e) }; }
       cx.notify();
+    });
+  }
+
+  /** Moves the selected hunk: ‹ › in the diff bar, or a click on its @@ line. */
+  pickHunk(i, cx, scroll = true) {
+    const dd = this.diff;
+    if (!dd?.hunks?.length) return;
+    this.hunkSel = Math.max(0, Math.min(dd.hunks.length - 1, i));
+    dd.hl = dd.hunks[this.hunkSel];
+    if (scroll) this.diffScroll.scroll_to_item(dd.hl, "center");
+    cx.notify();
+  }
+
+  /**
+   * Stage (or, from the staged diff, unstage) only the selected hunk: git apply
+   * --cached [--reverse] with a patch of that hunk. Only the index changes, never
+   * the file. The diff is read again first: if it moved, nothing is applied.
+   */
+  applySelectedHunk(cx) {
+    const dd = this.diff, sel = this.changeSel, d = this.data;
+    if (!dd?.split || !sel || !d || d.on) return;
+    const i = this.hunkSel, reverse = sel.which === "staged", text = dd.text;
+    const hunk = splitHunks(text).hunks[i];
+    if (!hunk) return;
+    const label = `${reverse ? "Unstage" : "Stage"} fragmento ${hunk.header.replace(/ @@.*$/, " @@")} de ${sel.path}`;
+    cx.spawn(async (cx) => {
+      await this.act(cx, label, async () => {
+        try {
+          const f = await this.fresh();
+          const now = await Q.fileDiff(f.git, f.repo.root, sel.path, sel.which);
+          if (now !== text) { this.say("warn", "El archivo cambió desde que se mostró el diff. Se actualizó: vuelve a elegir el fragmento."); return; }
+          const file = `${f.repo.gitDir}/herdr-git-panel-hunk.patch`;
+          const prev = await readTextFile(file).catch(() => null);
+          await writeTextFile(file, hunkPatch(now, i), prev);
+          await O.applyHunk(f.git, f.repo, file, { reverse, label });
+        } catch (e) { this.say("block", explain(e)); }
+      });
     });
   }
 

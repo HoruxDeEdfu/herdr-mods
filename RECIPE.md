@@ -27,6 +27,7 @@ The panel fills its whole block (tested between 320 and 900 px wide). It is a ca
 - 26 px rows: colored status letter (A `ansi2`, D `ansi1`, M `ansi3`, R `ansi5`, U `blocked`, ? `dim`), folder in `dim` + name, `+n` / `−n`, and the buttons ↗ (open in Files) and + / − / ✓.
 - The pill `sin guardar` ("unsaved") (`accent`) marks a file with unsaved changes in the editor.
 - When a file is selected, the list takes at most 38 % and the diff appears below it: a virtual list of 18 px rows in monospace font at 11 px, two line number columns, `+` on `ansi2` at 11 % and `-` on `ansi1` at 11 %.
+- For a text diff of a modified file (work tree or stage, not new, deleted, renamed or binary files, and not on another machine), a 30 px bar above the diff: `‹` **Fragmento n de m** `›` and **Stage fragmento** (primary) or, in the staged diff, **Unstage fragmento**. The selected hunk's `@@` row is tinted `accent` at 20 %; clicking a `@@` row selects it (`on_item_click` on the list), ‹ › scroll to it. It writes a patch of that hunk (file header + hunk) to `<git dir>/herdr-git-panel-hunk.patch` (`exec` has no stdin) and runs `git apply --cached --whitespace=nowarn [--reverse] <patch>`: only the index changes. The diff is read again right before; if it changed, nothing is applied.
 - At the bottom, the commit bar: message field (30 px) + **Commit (n)**.
 
 **Branches:**
@@ -201,6 +202,7 @@ The panel fills its whole block (tested between 320 and 900 px wide). It is a ca
 - Two branches that touch the same line: the preview lists the file as a conflict. On merging, the header shows "Merge en curso" and **Abortar merge** ("Abort merge") (with confirmation) returns HEAD to its previous commit and keeps the local changes that were not touched.
 - With a branch open in another worktree: its row shows ◆ and `worktree`, the checkout is blocked with the path and "Merge en ese worktree" does it there.
 - Changes: + / − move files between groups (including a deletion and a name with ñ and spaces), the diff shows line numbers and Commit creates the commit on the current branch.
+- A file with three separate edits: selecting fragment 2 and **Stage fragmento** leaves only that change in `git diff --cached`, the file unchanged; **Unstage fragmento** in the staged diff takes it back out.
 - With `qa` 3 commits behind `origin/qa` and HEAD on `main`, the menu of `qa` → **Actualizar ↓3** advances it and leaves HEAD and the files intact; if `qa` also has a commit of its own, it refuses and explains why.
 - Rejected push (the remote has a new commit) shows "El remoto rechazó el push…" ("The remote rejected the push…") and **Pull…**; Pull fetches and opens the preview with `origin/<rama>`.
 - History with "Todas las ramas" draws the forks and merges with colored lanes, and `g` hides it.

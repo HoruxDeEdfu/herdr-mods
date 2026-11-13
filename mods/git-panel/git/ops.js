@@ -63,6 +63,16 @@ export async function stage(git, repo, paths) {
   return ok(await git.write(repo.root, args, { lock: repo.commonDir, label: paths.length === 1 ? `Stage ${paths[0]}` : `Stage ${paths.length} archivos` }), args);
 }
 
+/**
+ * Applies one hunk to the index only (`git apply --cached`), never to the work
+ * tree. `reverse` takes a staged hunk back out. The patch is a file Git reads
+ * (exec has no stdin): the caller writes it inside the worktree's git dir.
+ */
+export async function applyHunk(git, repo, patchFile, { reverse = false, label } = {}) {
+  const args = ["apply", "--cached", "--whitespace=nowarn", ...(reverse ? ["--reverse"] : []), patchFile];
+  return ok(await git.write(repo.root, args, { lock: repo.commonDir, label: label ?? (reverse ? "Unstage fragmento" : "Stage fragmento") }), args);
+}
+
 /** Takes paths out of the index; the work tree is untouched. */
 export async function unstage(git, repo, paths, hasHead) {
   const args = hasHead ? ["restore", "--staged", "--", ...paths] : ["rm", "--cached", "-r", "--quiet", "--", ...paths];

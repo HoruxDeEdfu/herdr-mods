@@ -73,6 +73,19 @@ function header(v, t) {
   return col;
 }
 
+// Above a work-tree or staged diff: which hunk, ‹ ›, and stage/unstage just that one.
+function hunkBar(v, t) {
+  const dd = v.diff, n = dd.hunks.length, i = v.hunkSel, staged = dd.which === "staged";
+  return h_flex().flex_none().h(30).px(10).gap(6).items_center().border_b(1).border_color(t.border).text_size(11.5)
+    .child(button(t, "hunk-prev", "‹", (_e, cx) => v.pickHunk(i - 1, cx), { small: true, kind: "ghost", disabled: i <= 0, tooltip: "Fragmento anterior" }))
+    .child(div().text_color(t.muted).child(`Fragmento ${i + 1} de ${n}`))
+    .child(button(t, "hunk-next", "›", (_e, cx) => v.pickHunk(i + 1, cx), { small: true, kind: "ghost", disabled: i >= n - 1, tooltip: "Fragmento siguiente" }))
+    .child(div().flex_1())
+    .child(button(t, "hunk-apply", staged ? "Unstage fragmento" : "Stage fragmento", (_e, cx) => v.applySelectedHunk(cx), {
+      small: true, kind: staged ? undefined : "primary", disabled: Boolean(v.op),
+      tooltip: staged ? "Quita solo este fragmento del stage (git apply --cached --reverse). El archivo no cambia." : "Añade solo este fragmento al stage (git apply --cached). El archivo no cambia." }));
+}
+
 // "Rebase de feature sobre main · 2/5", or the plain name of what's in progress.
 function opText(d) {
   const op = d.ops[0], r = d.rebase;
@@ -368,7 +381,11 @@ function changes(v, t) {
         .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(v.changeSel.path))
         .child(div().text_size(10.5).text_color(t.dim).child(v.changeSel.which === "staged" ? "en stage vs HEAD" : v.changeSel.which === "untracked" ? "archivo nuevo" : "working tree vs stage"))
         .child(div().id("diff-x").px(4).text_color(t.dim).cursor_pointer().on_click((_e, cx) => { v.changeSel = null; v.diff = null; cx.notify(); }).child("×")))
-      .child(div().flex_1().min_h(0).child(diffView(t, "change-diff", v.diff)))
+      .when(Boolean(v.diff?.split && v.diff.hunks.length), (e) => e.child(hunkBar(v, t)))
+      .child(div().flex_1().min_h(0).child(diffView(t, "change-diff", v.diff, {
+        scroll: v.diffScroll,
+        onRow: (i, cx) => { const k = v.diff?.hunks?.indexOf(i) ?? -1; if (k >= 0) v.pickHunk(k, cx, false); },
+      })))
     : null;
   // Commit bar. While a merge is in progress an empty message concludes it with Git's own.
   const canCommit = !busy && !s.conflicts && (s.staged > 0 || merging) && (Boolean(v.commitText.trim()) || merging);
