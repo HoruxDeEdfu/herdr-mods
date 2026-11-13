@@ -251,9 +251,10 @@ export async function remoteHead(git, root, remote) {
   return r.code === 0 ? r.stdout.trim() || null : null;
 }
 
-/** Commits reachable from `ref` and from no other ref (branches, remotes, tags, HEAD). */
+/** Commits reachable from `ref` (or any of several refs) and from no other ref (branches, remotes, tags, HEAD). */
 export async function onlyIn(git, root, ref) {
-  const r = await git.readOk(root, ["rev-list", "--count", ref, "--not", `--exclude=${ref}`, "--all"]);
+  const list = Array.isArray(ref) ? ref : [ref];
+  const r = await git.readOk(root, ["rev-list", "--count", ...list, "--not", ...list.map((x) => `--exclude=${x}`), "--all"]);
   return Number(r.trim()) || 0;
 }
 

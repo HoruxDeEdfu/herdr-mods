@@ -39,6 +39,7 @@ export function renderSheet(v, t, cx) {
     case "pick-commit": return pickCommitSheet(v, t, s);
     case "ff": return ffSheet(v, t, s);
     case "remote-delete": return remoteDeleteSheet(v, t, s);
+    case "delete-branch": return deleteBranchSheet(v, t, s);
     case "conflict": return conflictSheet(v, t, s);
     case "account": return accountSheet(v, t, s);
   }
@@ -383,4 +384,30 @@ function remoteDeleteSheet(v, t, s) {
     .child(button(t, "rd-go", s.running ? "Eliminando…" : "Eliminar del remoto", (_e, cx) => v.confirmDeleteRemote(cx),
       { kind: "danger", disabled: blocked || s.running || Boolean(v.op) || (c.needsSecond && !s.ack) }));
   return frame(v, t, title, content, footer, sub);
+}
+
+// ---------- delete a local branch (and, if ticked, its upstream) ----------
+function deleteBranchSheet(v, t, s) {
+  const p = s.pair;
+  const box = (on, enabled) => div().text_color(!enabled ? t.dim : on ? t.blocked : t.muted).child(on ? "☑" : "☐");
+  const content = v_flex().gap(10)
+    .child(div().text_color(t.foreground).child("Solo se elimina si sus commits ya están integrados en otra rama (git branch -d)."))
+    .when(Boolean(s.loading), (e) => e.child(loadingRow(t, "Comprobando su rama en el remoto (fetch)…")))
+    .when(Boolean(s.pairError), (e) => e.child(notice(t, "warn", `No se pudo comprobar el remoto: ${s.pairError} Solo se eliminará la rama local.`)))
+    .when(Boolean(p), (e) => e.child(v_flex().gap(4)
+      .child(h_flex().id("db-remote").gap(8).px(8).py(6).items_center().rounded(6).border_1()
+        .border_color(s.withRemote ? t.blocked + "88" : t.border)
+        .when(p.enabled, (el) => el.cursor_pointer().hover((st) => st.bg(t.hover)).on_click((_e, cx) => { s.withRemote = !s.withRemote; cx.notify(); }))
+        .child(box(s.withRemote, p.enabled))
+        .child(div().flex_1().text_size(12).text_color(p.enabled ? t.foreground : t.dim).child(`Eliminar también ${p.remote}/${p.branch} del remoto`)))
+      .when(Boolean(p.reason), (el) => el.child(div().px(8).text_size(11).text_color(t.dim).child(p.reason)))
+      .when(Boolean(s.withRemote), (el) => el.child(div().px(8).text_size(11).text_color(t.dim).child(`Afecta a todos los que usan ${p.remote}. Se borra después de la local y solo si nadie la actualizó entretanto. Nunca es un force push.`)))))
+    .child(div().font_family(mono()).text_size(11).text_color(t.dim).child(`git branch -d ${s.name}`))
+    .when(Boolean(s.withRemote && p?.enabled), (e) => e.child(div().font_family(mono()).text_size(11).text_color(t.dim).child(p.command)))
+    .when(Boolean(s.error), (e) => e.child(notice(t, "block", s.error)));
+  const footer = h_flex().gap(8)
+    .child(button(t, "db-cancel", "Cancelar", (_e, cx) => v.closeSheet(cx), { disabled: s.running }))
+    .child(button(t, "db-go", s.running ? "Eliminando…" : s.withRemote ? "Eliminar local y remota" : "Eliminar rama", (_e, cx) => v.deleteBranch(s.name, false, cx),
+      { kind: "danger", disabled: s.loading || s.running || Boolean(v.op) }));
+  return frame(v, t, `¿Eliminar la rama ${s.name}?`, content, footer, p ? `Sigue a ${p.remote}/${p.branch}` : null);
 }

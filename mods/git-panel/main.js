@@ -978,9 +978,29 @@ export default class GitPanel extends View {
       action: `Crear y cambiar a ${local}`, run: (cx) => this.run(cx, `Crear ${local}`, (f) => O.trackRemote(f.git, f.repo, remoteName, local), `Ahora estás en ${local}.`) };
     cx.notify();
   }
+  /**
+   * Delete a local branch; if it has an upstream, offer (unticked) to delete
+   * that one on the remote too, with the same checks as deleting it from its
+   * own menu. Local goes first (-d); the remote only if that worked.
+   */
   askDelete(name, cx) {
-    this.sheet = { ctx: this.bound(), kind: "confirm", title: `¿Eliminar la rama ${name}?`, detail: "Solo se elimina si sus commits ya están integrados en otra rama (git branch -d). Los remotos no se tocan.",
-      action: "Eliminar rama", danger: true, run: (cx) => this.deleteBranch(name, false, cx) };
+    const local = this.data?.refs.find((r) => r.type === "local" && r.name === name);
+    this.sheet = { ctx: this.bound(), kind: "delete-branch", name, withRemote: false, loading: Boolean(local?.upstream && !local.gone), pair: null };
+    const sheet = this.sheet;
+    if (sheet.loading) cx.spawn(async (cx) => {
+      try {
+        let f = await this.fresh(sheet);
+        const up = f.refs.find((r) => r.type === "remote" && r.name === local.upstream);
+        if (up) await O.fetch(f.git, f.repo, up.remote);
+        f = await this.fresh(sheet);
+        const l = f.refs.find((r) => r.type === "local" && r.name === name);
+        const upstreamRef = l?.upstream ? f.refs.find((r) => r.type === "remote" && r.name === l.upstream) ?? null : null;
+        const [head, only] = upstreamRef ? await Promise.all([Q.remoteHead(f.git, f.repo.root, upstreamRef.remote), Q.onlyIn(f.git, f.repo.root, [l.ref, upstreamRef.ref])]) : [null, 0];
+        sheet.pair = F.pairDeleteCheck({ local: l, upstreamRef, head, only });
+        sheet.sha = upstreamRef?.oid ?? null;
+      } catch (e) { sheet.pairError = explain(e); }
+      sheet.loading = false; cx.notify();
+    });
     cx.notify();
   }
   /**
@@ -1008,6 +1028,20 @@ export default class GitPanel extends View {
     cx.notify();
   }
 
+  /** After the local branch is gone: the remote one, only if nothing moved and no commit would be left without a branch. */
+  async deletePairRemote(f, pair) {
+    const name = `${pair.remote}/${pair.branch}`;
+    try {
+      const now = await Q.remoteBranchSha(f.git, f.repo.root, pair.remote, pair.branch);
+      if (now === null) return { ok: true, text: `${name} ya no existía en el remoto.` };
+      if (now !== pair.sha) return { ok: false, text: `${name} NO se eliminó: alguien la actualizó en el remoto (ahora en ${now.slice(0, 7)}).` };
+      const only = await Q.onlyIn(f.git, f.repo.root, `refs/remotes/${name}`);
+      if (only > 0) return { ok: false, text: `${name} NO se eliminó: ${only} commit(s) quedarían sin ninguna rama.` };
+      await O.deleteRemoteBranch(f.git, f.repo, pair.remote, pair.branch);
+      return { ok: true, text: `${name} también se eliminó del remoto.` };
+    } catch (e) { return { ok: false, text: `${name} NO se eliminó: ${explain(e)}` }; }
+  }
+
   confirmDeleteRemote(cx) {
     const s = this.sheet;
     if (!s?.check || s.running || s.check.blocks.length || (s.check.needsSecond && !s.ack)) return;
@@ -1030,9 +1064,16 @@ export default class GitPanel extends View {
 
   deleteBranch(name, force, cx) {
     const s = this.sheet;
+    const pair = s?.withRemote && s.pair?.enabled ? { ...s.pair, sha: s.sha } : null;
+    if (s) s.running = true;
     cx.spawn(async (cx) => {
       await this.act(cx, `Eliminar ${name}`, async () => {
-        try { const f = await this.fresh(s); await O.deleteBranch(f.git, f.repo, name, force); this.sheet = null; this.say("ok", `Rama ${name} eliminada.`); }
+        try {
+          const f = await this.fresh(s); await O.deleteBranch(f.git, f.repo, name, force); this.sheet = null;
+          if (!pair) { this.say("ok", `Rama ${name} eliminada.`); return; }
+          const r = await this.deletePairRemote(f, pair);
+          this.say(r.ok ? "ok" : "warn", `Rama ${name} eliminada. ${r.text}`);
+        }
         catch (e) {
           if (!force && /not fully merged/i.test(e.stderr ?? "")) {
             this.sheet = { ctx: this.bound(), kind: "confirm", title: `${name} tiene commits sin integrar`, detail: `Si la eliminas, esos commits quedarán sin ninguna rama que los apunte (se podrían recuperar con git reflog durante un tiempo). Esta acción usa git branch -D.`,

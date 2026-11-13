@@ -406,3 +406,18 @@ export function remoteDeleteCheck({ refs, remotes, ref, head, only }) {
   if (blocks.length) warnings.length = 0; // nothing to weigh when it can't happen
   return { blocks, warnings, needsSecond: only > 0 && !blocks.length, remote, branch, command: branch ? `git push ${remote} --delete refs/heads/${branch}` : "" };
 }
+
+/**
+ * When deleting a local branch: may its upstream on the remote go too?
+ * `upstreamRef`: the remote-tracking ref after a fresh fetch (null if gone);
+ * `only`: commits that exist only in the local branch and/or its upstream.
+ * Returns null when there's nothing to offer, else { enabled, reason, remote, branch, command }.
+ */
+export function pairDeleteCheck({ local, upstreamRef, head, only }) {
+  if (!local?.upstream || local.gone || !upstreamRef) return null;
+  const remote = upstreamRef.remote, branch = upstreamRef.name.slice(remote.length + 1);
+  const command = `git push ${remote} --delete refs/heads/${branch}`;
+  if (head && head === upstreamRef.name) return { enabled: false, reason: `${upstreamRef.name} es la rama principal de ${remote}: el panel no la elimina.`, remote, branch, command };
+  if (only > 0) return { enabled: false, reason: `${only} commit(s) solo están en ${local.name} y ${upstreamRef.name}: borrar las dos los dejaría sin ninguna rama. Intégralos antes o elimina solo la local.`, remote, branch, command };
+  return { enabled: true, reason: null, remote, branch, command };
+}
