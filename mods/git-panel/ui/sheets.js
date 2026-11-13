@@ -40,6 +40,8 @@ export function renderSheet(v, t, cx) {
     case "ff": return ffSheet(v, t, s);
     case "remote-delete": return remoteDeleteSheet(v, t, s);
     case "delete-branch": return deleteBranchSheet(v, t, s);
+    case "batch-delete": return batchDeleteSheet(v, t, s);
+    case "batch-result": return batchResultSheet(v, t, s);
     case "conflict": return conflictSheet(v, t, s);
     case "account": return accountSheet(v, t, s);
   }
@@ -410,4 +412,53 @@ function deleteBranchSheet(v, t, s) {
     .child(button(t, "db-go", s.running ? "Eliminando…" : s.withRemote ? "Eliminar local y remota" : "Eliminar rama", (_e, cx) => v.deleteBranch(s.name, false, cx),
       { kind: "danger", disabled: s.loading || s.running || Boolean(v.op) }));
   return frame(v, t, `¿Eliminar la rama ${s.name}?`, content, footer, p ? `Sigue a ${p.remote}/${p.branch}` : null);
+}
+
+// ---------- several local branches (and, where ticked, their upstreams) ----------
+function batchDeleteSheet(v, t, s) {
+  const title = `Eliminar ${s.names.length} ramas`;
+  const sub = "Cada una con git branch -d (nunca -D en lote). Las que no se pueden se saltan.";
+  if (s.loading) return frame(v, t, title, loadingRow(t, "Comprobando las ramas y sus remotos (fetch)…"), null, sub);
+  const ok = s.rows.filter((r) => r.ok), skip = s.rows.filter((r) => !r.ok);
+  const eligible = ok.filter((r) => r.pair?.enabled);
+  const allOn = eligible.length > 0 && eligible.every((r) => s.withRemote[r.name]);
+  const nRemote = eligible.filter((r) => s.withRemote[r.name]).length;
+  const box = (on, enabled) => div().w(14).flex_none().text_color(!enabled ? t.dim : on ? t.blocked : t.muted).child(on ? "☑" : "☐");
+  const row = (r) => v_flex().gap(2).py(4).border_b(1).border_color(t.border)
+    .child(h_flex().gap(8).items_center().text_size(12)
+      .child(div().w(14).flex_none().text_color(r.ok ? t.ansi2 : t.dim).child(r.ok ? "✓" : "–"))
+      .child(div().min_w(0).flex_1().truncate().text_color(r.ok ? t.foreground : t.dim).child(r.name)))
+    .when(!r.ok, (e) => e.child(div().pl(22).text_size(11).text_color(t.dim).child(r.reason)))
+    .when(Boolean(r.pair), (e) => e.child(h_flex().id(`bd-r-${r.name}`).pl(22).gap(6).items_center().text_size(11.5)
+      .when(r.pair.enabled, (el) => el.cursor_pointer().on_click((_e, cx) => { s.withRemote[r.name] = !s.withRemote[r.name]; cx.notify(); }))
+      .child(box(Boolean(s.withRemote[r.name]), r.pair.enabled))
+      .child(div().text_color(r.pair.enabled ? t.muted : t.dim).child(`también ${r.pair.remote}/${r.pair.branch}`))))
+    .when(Boolean(r.pair && !r.pair.enabled), (e) => e.child(div().pl(42).text_size(10.5).text_color(t.dim).child(r.pair.reason)));
+  const content = v_flex().gap(8)
+    .when(Boolean(s.error), (e) => e.child(notice(t, "block", s.error)))
+    .when(eligible.length > 0, (e) => e.child(h_flex().id("bd-all").gap(8).px(8).py(6).items_center().rounded(6).cursor_pointer()
+      .border_1().border_color(allOn ? t.blocked + "88" : t.border).hover((st) => st.bg(t.hover))
+      .on_click((_e, cx) => { for (const r of eligible) s.withRemote[r.name] = !allOn; cx.notify(); })
+      .child(box(allOn, true)).child(div().text_size(12).child(`También en el remoto cuando sea seguro (${eligible.length})`))))
+    .when(nRemote > 0, (e) => e.child(div().text_size(11).text_color(t.dim).child("Afecta a todos los que usan el remoto. Cada una se borra después de su rama local y solo si nadie la actualizó y ningún commit queda sin rama. Nunca es un force push.")))
+    .child(sectionTitle(t, `Se eliminarán · ${ok.length}`)).children(ok.map(row))
+    .when(skip.length > 0, (e) => e.child(sectionTitle(t, `Se saltan · ${skip.length}`)).children(skip.map(row)));
+  const footer = h_flex().gap(8)
+    .child(button(t, "bd-cancel", "Cancelar", (_e, cx) => v.closeSheet(cx), { disabled: s.running }))
+    .child(button(t, "bd-go", s.running ? "Eliminando…" : nRemote ? `Eliminar ${ok.length} (y ${nRemote} remotas)` : `Eliminar ${ok.length}`, (_e, cx) => v.runDeleteBatch(cx),
+      { kind: "danger", disabled: !ok.length || s.running || Boolean(v.op) }));
+  return frame(v, t, title, content, footer, sub);
+}
+
+function batchResultSheet(v, t, s) {
+  const mark = (x) => !x ? null : x.ok ? "✓" : "✕";
+  const content = v_flex().gap(6).children(s.results.map((r) => v_flex().gap(2).py(4).border_b(1).border_color(t.border)
+    .child(h_flex().gap(8).items_center().text_size(12)
+      .child(div().w(14).flex_none().text_color(r.local?.ok ? t.ansi2 : t.blocked).child(mark(r.local)))
+      .child(div().flex_1().min_w(0).truncate().child(r.name))
+      .when(Boolean(r.remote), (e) => e.child(div().text_size(11).text_color(r.remote.ok ? t.ansi2 : t.ansi3).child(r.remote.ok ? "✓ remoto" : "remoto no"))))
+    .when(Boolean(r.local && !r.local.ok && r.local.text), (e) => e.child(div().pl(22).text_size(11).text_color(t.dim).child(r.local.text)))
+    .when(Boolean(r.remote), (e) => e.child(div().pl(22).text_size(11).text_color(t.dim).child(r.remote.text)))));
+  const done = s.results.filter((r) => r.local?.ok).length;
+  return frame(v, t, `${done} de ${s.results.length} ramas eliminadas`, content, h_flex().gap(8).child(button(t, "br-ok", "Listo", (_e, cx) => v.closeSheet(cx), { kind: "primary" })));
 }

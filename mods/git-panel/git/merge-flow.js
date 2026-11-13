@@ -421,3 +421,21 @@ export function pairDeleteCheck({ local, upstreamRef, head, only }) {
   if (only > 0) return { enabled: false, reason: `${only} commit(s) solo están en ${local.name} y ${upstreamRef.name}: borrar las dos los dejaría sin ninguna rama. Intégralos antes o elimina solo la local.`, remote, branch, command };
   return { enabled: true, reason: null, remote, branch, command };
 }
+
+// ---------- deleting several local branches at once ----------
+/**
+ * One row per selected local branch: can `git branch -d` take it, and may its
+ * upstream go too. `merged[name]`: contained in HEAD or in its upstream (what -d
+ * checks); `pairs[name]`: pairDeleteCheck's result (or null). Batches never use -D.
+ */
+export function batchDeleteRows({ names, refs, root, merged, pairs }) {
+  return names.map((name) => {
+    const ref = refs.find((r) => r.type === "local" && r.name === name);
+    let reason = null;
+    if (!ref) reason = "ya no existe";
+    else if (ref.current) reason = "es la rama actual";
+    else if (ref.worktree && ref.worktree !== root) reason = `está abierta en otro worktree (${ref.worktree})`;
+    else if (!merged?.[name]) reason = "tiene commits sin integrar: elimínala sola (pide confirmar -D)";
+    return { name, ok: !reason, reason, pair: reason ? null : pairs?.[name] ?? null };
+  });
+}

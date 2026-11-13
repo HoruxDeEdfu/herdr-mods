@@ -16,6 +16,7 @@ import * as A from "./git/accounts.js";
 import { diffRows, hasConflictMarkers, conflictRows, splitHunks, canSplit, hunkPatch, hunkRowIndexes } from "./git/diff.js";
 import { layoutGraph } from "./git/graph.js";
 import { explain } from "./git/errors.js";
+import * as SEL from "./git/selection.js";
 import { renderPanel } from "./ui/panel.js";
 import { renderMenu, PICK } from "./ui/menu.js";
 
@@ -67,6 +68,7 @@ export default class GitPanel extends View {
     this.op = null; this.banner = null; this.sheet = null; this.pinned = null;
     this.collapsed = new Set(JSON.parse(this.stored("collapsed") ?? "null") ?? ["tags"]);
     this.selectedRef = null;
+    this.multi = { selected: [], anchor: null }; // several local branches (⌘/⇧-click)
     this.history = { commits: [], done: false, loading: false, all: this.stored("historyAll") === "1", selected: null, detail: null, fp: null };
     this.oplog = JSON.parse(this.stored("oplog") ?? "[]");
     this.menuActions = new Map();
@@ -231,6 +233,7 @@ export default class GitPanel extends View {
         this.data = { on: c.on, repo, status, refs, ops, worktrees, remotes, drafts, account, rebase, numstat: { staged, unstaged } };
         this.publish(F.summaryFor(this.data));
         this.syncChangeSelection(cx);
+        this.multi.selected = SEL.keepExisting(this.multi.selected, refs.map((r) => r.ref));
         this.error = null;
         const fp = JSON.stringify([repo.root, status.oid, status.head, refs.map((r) => r.ref + r.oid)]);
         if (history || fp !== this.history.fp) { this.history.fp = fp; await this.loadHistory(cx, true); }
@@ -921,6 +924,7 @@ export default class GitPanel extends View {
     if (e.key === "escape") {
       if (this.sheet) { this.closeSheet(cx); return true; }
       if (this.history.selected) { this.history.selected = null; this.history.detail = null; cx.notify(); return true; }
+      if (this.tab === "branches" && this.multi.selected.length > 1) { this.clearMulti(cx); return true; }
       return false;
     }
     if (this.sheet || !this.data || e.modifiers?.platform || e.modifiers?.control || e.modifiers?.alt) return false;
@@ -937,7 +941,7 @@ export default class GitPanel extends View {
         if (!keys.length) return true;
         const i = Math.max(-1, keys.indexOf(this.selectedRef));
         const next = keys[Math.min(keys.length - 1, Math.max(0, i + step))];
-        this.selectedRef = next;
+        this.selectedRef = next; this.multi = { selected: [next], anchor: next };
         const at = (this.branchKeys ?? []).indexOf(next);
         if (at >= 0) this.branchScroll.scroll_to_item(at);
       } else if (this.tab === "history") {
@@ -1040,6 +1044,81 @@ export default class GitPanel extends View {
       await O.deleteRemoteBranch(f.git, f.repo, pair.remote, pair.branch);
       return { ok: true, text: `${name} también se eliminó del remoto.` };
     } catch (e) { return { ok: false, text: `${name} NO se eliminó: ${explain(e)}` }; }
+  }
+
+  clearMulti(cx) { this.multi = { selected: [], anchor: null }; cx.notify(); }
+  multiNames() { return this.multi.selected.filter((k) => k.startsWith("refs/heads/")).map((k) => k.slice(11)); }
+
+  /** Right-click on a row that is part of a multi-selection. */
+  multiMenu(cx) {
+    const names = this.multiNames();
+    this.openMenu(`${names.length} ramas seleccionadas`, [
+      { id: "batch-delete", label: `Eliminar ${names.length} ramas…`, danger: true, disabled: Boolean(this.op), run: (cx) => this.askDeleteBatch(names, cx) },
+      { sep: true, id: "s1" },
+      { id: "clear", label: "Quitar selección (Esc)", run: (cx) => this.clearMulti(cx) },
+    ], cx);
+  }
+
+  /**
+   * Several local branches: each with -d (never -D in a batch), and, where
+   * ticked and safe, its upstream on the remote. Fetches the remotes involved first.
+   */
+  askDeleteBatch(names, cx) {
+    this.sheet = { ctx: this.bound(), kind: "batch-delete", names, loading: true, rows: [], withRemote: {}, shas: {} };
+    const sheet = this.sheet;
+    cx.spawn(async (cx) => {
+      try {
+        let f = await this.fresh(sheet);
+        const locals = names.map((n) => f.refs.find((r) => r.type === "local" && r.name === n)).filter(Boolean);
+        const remotesUsed = [...new Set(locals.map((l) => f.refs.find((r) => r.type === "remote" && r.name === l.upstream)?.remote).filter(Boolean))];
+        for (const remote of remotesUsed) await O.fetch(f.git, f.repo, remote);
+        f = await this.fresh(sheet);
+        const heads = {};
+        for (const remote of remotesUsed) heads[remote] = await Q.remoteHead(f.git, f.repo.root, remote);
+        const merged = {}, pairs = {};
+        for (const name of names) {
+          const l = f.refs.find((r) => r.type === "local" && r.name === name);
+          if (!l) continue;
+          const up = l.upstream && !l.gone ? f.refs.find((r) => r.type === "remote" && r.name === l.upstream) ?? null : null;
+          // What git branch -d accepts: contained in HEAD, or in its upstream.
+          merged[name] = (await Q.isAncestor(f.git, f.repo.root, l.ref, "HEAD")) || Boolean(up && await Q.isAncestor(f.git, f.repo.root, l.ref, up.ref));
+          if (up) {
+            pairs[name] = F.pairDeleteCheck({ local: l, upstreamRef: up, head: heads[up.remote], only: await Q.onlyIn(f.git, f.repo.root, [l.ref, up.ref]) });
+            sheet.shas[name] = up.oid;
+          }
+        }
+        sheet.rows = F.batchDeleteRows({ names, refs: f.refs, root: f.repo.root, merged, pairs });
+      } catch (e) { sheet.error = explain(e); }
+      sheet.loading = false; cx.notify();
+    });
+    cx.notify();
+  }
+
+  /** Runs the batch one branch at a time; each remote is re-checked after the deletions before it. */
+  runDeleteBatch(cx) {
+    const s = this.sheet;
+    if (!s || s.kind !== "batch-delete" || s.running || s.loading) return;
+    const todo = s.rows.filter((r) => r.ok);
+    if (!todo.length) return;
+    s.running = true; cx.notify();
+    cx.spawn(async (cx) => {
+      await this.act(cx, `Eliminar ${todo.length} ramas`, async () => {
+        const results = [];
+        try {
+          const f = await this.fresh(s);
+          for (const row of todo) {
+            const res = { name: row.name, local: null, remote: null };
+            try { await O.deleteBranch(f.git, f.repo, row.name, false); res.local = { ok: true }; }
+            catch (e) { res.local = { ok: false, text: explain(e) }; }
+            if (res.local.ok && s.withRemote[row.name] && row.pair?.enabled) res.remote = await this.deletePairRemote(f, { ...row.pair, sha: s.shas[row.name] });
+            results.push(res);
+          }
+          for (const row of s.rows.filter((r) => !r.ok)) results.push({ name: row.name, local: { ok: false, text: `No se intentó: ${row.reason}.` }, remote: null });
+        } catch (e) { results.push({ name: "—", local: { ok: false, text: explain(e) }, remote: null }); }
+        this.multi = { selected: [], anchor: null };
+        this.sheet = { ctx: s.ctx, kind: "batch-result", results };
+      });
+    });
   }
 
   confirmDeleteRemote(cx) {

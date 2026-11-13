@@ -9,6 +9,7 @@ import { renderSheet } from "./sheets.js";
 import { diffView } from "./diffview.js";
 import { ffMarkText } from "../git/queries.js";
 import { autoFetchLine } from "../git/merge-flow.js";
+import * as SEL from "../git/selection.js";
 
 const mono = () => settings().font_family ?? "JetBrains Mono";
 const tilde = (p) => { const h = home(); return p && h && p.startsWith(h + "/") ? "~" + p.slice(h.length) : p; };
@@ -193,7 +194,8 @@ function branches(v, t) {
         .when(Boolean(w.locked), (e) => e.child(pill(t, "bloqueado", t.ansi3)))
         .when(Boolean(w.prunable), (e) => e.child(pill(t, "carpeta borrada", t.blocked)));
     }
-    const ref = r.ref, sel = v.selectedRef === ref.ref;
+    const multi = v.multi.selected.length > 1;
+    const ref = r.ref, sel = multi ? v.multi.selected.includes(ref.ref) : v.selectedRef === ref.ref;
     const elsewhere = ref.type === "local" && ref.worktree && ref.worktree !== d.repo.root;
     return h_flex().h(28).mx(4).px(8).gap(7).items_center().rounded(6).when(sel, (e) => e.bg(t.selected))
       .child(div().w(10).flex_none().text_color(ref.current ? t.accent : t.ansi5).child(ref.current ? "●" : elsewhere ? "◆" : ""))
@@ -209,7 +211,13 @@ function branches(v, t) {
   const selected = d.refs.find((r) => r.ref === v.selectedRef);
   const selWt = v.selectedRef?.startsWith("wt:") ? (d.worktrees ?? []).find((w) => `wt:${w.path}` === v.selectedRef) : null;
   const selElsewhere = selected?.type === "local" && selected.worktree && selected.worktree !== d.repo.root;
-  const bar = selWt
+  const many = v.multi.selected.length > 1 ? v.multiNames() : null;
+  const bar = many
+    ? h_flex().flex_none().h(38).px(10).gap(6).items_center().border_t(1).border_color(t.border).bg(t.chrome)
+      .child(div().flex_1().min_w(0).truncate().text_size(11.5).text_color(t.muted).child(`${many.length} ramas seleccionadas`))
+      .child(button(t, "sb-clear", "Quitar selección", (_e, cx) => v.clearMulti(cx), { small: true, kind: "ghost", tooltip: "Esc" }))
+      .child(button(t, "sb-batch-del", `Eliminar ${many.length}…`, (_e, cx) => v.askDeleteBatch(many, cx), { small: true, kind: "danger", disabled: Boolean(v.op) }))
+    : selWt
     ? h_flex().flex_none().h(38).px(10).gap(6).items_center().border_t(1).border_color(t.border).bg(t.chrome)
       .child(div().flex_1().min_w(0).truncate().text_size(11.5).text_color(t.muted).child(selWt.path))
       .when(selWt.path !== d.repo.root && !selWt.prunable, (e) => e.child(button(t, "sb-wt-view", "Ver", (_e, cx) => v.pinWorktree(selWt.path, cx), { small: true })))
@@ -220,15 +228,20 @@ function branches(v, t) {
       .when(selected.type === "local" && !selected.current && !selElsewhere, (e) => e.child(button(t, "sb-co", "Cambiar", (_e, cx) => v.askCheckout(selected.name, null, cx), { small: true, disabled: Boolean(v.op) })))
       .child(button(t, "sb-more", "Acciones ⋯", (_e, cx) => v.branchMenu(selected, cx), { small: true }))
     : h_flex().flex_none().px(12).h(26).items_center().text_size(10.5).text_color(t.dim).border_t(1).border_color(t.border)
-      .child("Clic: seleccionar · doble clic: cambiar · clic derecho o Enter: acciones · ↑↓ · /");
+      .child("Clic: seleccionar · ⌘/⇧-clic: varias · doble clic: cambiar · clic derecho: acciones · /");
   return v_flex().size_full().min_h(0).child(filter)
     .child(div().flex_1().min_h(0).relative()
+      // The list's click carries no modifiers: read them on the press, which comes first.
+      .on_mouse_down("left", (e) => { v.clickMods = e.modifiers; })
       .child(v_virtual_list("branches", rows.length, 28, (i) => keyOf(rows[i]),
         (range) => rows.slice(range.start, range.end).map(row)).track_scroll(v.branchScroll).size_full()
         .on_item_click((key, cx) => {
           const r = byKey.get(key);
           if (!r) return;
           if (r.kind === "group") { v.toggleGroup(r.id, cx); return; }
+          const mods = v.clickMods ?? {}; v.clickMods = null;
+          v.multi = SEL.clickSelect(v.multi, key, v.branchKeys, mods);
+          if (v.multi.multi || mods.platform || mods.control || mods.shift) { v.selectedRef = key; v.lastClick = null; v.handle.focus(); cx.notify(); return; }
           const now = Date.now(), again = v.lastClick?.key === key && now - v.lastClick.at < 450;
           v.lastClick = { key, at: now };
           v.selectedRef = key;
@@ -242,6 +255,8 @@ function branches(v, t) {
           const r = byKey.get(key);
           if (r?.kind === "wt") { v.selectedRef = key; v.worktreeMenu(r.wt, cx); return; }
           if (r?.kind !== "ref") return;
+          if (v.multi.selected.length > 1 && v.multi.selected.includes(key)) { v.multiMenu(cx); return; }
+          v.multi = { selected: [key], anchor: key };
           v.selectedRef = key; v.branchMenu(r.ref, cx);
         }))
       .child(Scrollbar.vertical("branches").viewport_from_layout().absolute().inset_0()))
