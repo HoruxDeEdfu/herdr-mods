@@ -178,3 +178,44 @@ export async function markerCounts(root, paths, read) {
   }
   return out;
 }
+
+// ---------- fast-forwards, from the reflog ----------
+// A fast-forward leaves no commit behind, so History can't show it by itself.
+// The branch's reflog still knows: "merge dev: Fast-forward" (git merge),
+// "pull …: Fast-forward", "fetch . refs/remotes/x:refs/heads/y: fast-forward"
+// (Actualizar). Each entry's previous position is the next (older) entry.
+
+/** Parses `log -g -z --format=%H%x1f%gs%x1f%ct` of one branch into fast-forward events. */
+export function parseFfReflog(stdout, branch) {
+  const rows = stdout.split("\0").map((r) => r.replace(/^\n/, "")).filter(Boolean).map((r) => { const [hash, subject = "", ct] = r.split("\x1f"); return { hash, subject, at: Number(ct) * 1000 }; });
+  const out = [];
+  for (let i = 0; i < rows.length - 1; i++) {
+    const { hash, subject, at } = rows[i], from = rows[i + 1].hash;
+    if (!/fast[- ]forward\s*$/i.test(subject) || from === hash) continue;
+    let source = null, m;
+    if ((m = /^merge (.+?): Fast-forward$/i.exec(subject))) source = m[1];
+    else if ((m = /^fetch \. refs\/remotes\/(.+?):refs\/heads\/.+: fast-forward$/i.exec(subject))) source = m[1];
+    else if (/^pull\b/i.test(subject)) source = "pull";
+    out.push({ branch, from, to: hash, source, at });
+  }
+  return out;
+}
+
+/**
+ * Recent fast-forwards of local branches: [{ branch, from, to, source, at }],
+ * newest first, at most `perBranch` each and none older than `maxAgeMs`.
+ * Branches without a reflog (fresh clones, reflog off) give nothing.
+ */
+export async function ffMarks(git, root, branches, { perBranch = 3, depth = 40, maxAgeMs = 30 * 864e5, now = Date.now() } = {}) {
+  const lists = await Promise.all(branches.slice(0, 25).map(async (b) => {
+    const r = await git.read(root, ["log", "-g", "-z", "--format=%H%x1f%gs%x1f%ct", "-n", String(depth), `refs/heads/${b}`, "--"], { expected: [0, 128] });
+    return r.code === 0 ? parseFfReflog(r.stdout, b).filter((e) => now - e.at <= maxAgeMs).slice(0, perBranch) : [];
+  }));
+  return lists.flat().sort((a, b) => b.at - a.at);
+}
+
+/** One sentence for a commit that was a branch's position before a fast-forward. */
+export function ffMarkText(e) {
+  const by = e.source === "pull" ? "de un Pull" : e.source ? `del fast-forward de ${e.source}` : "de un fast-forward";
+  return `${e.branch} estaba aquí antes ${by} y avanzó a ${e.to.slice(0, 7)} sin commit de merge.`;
+}

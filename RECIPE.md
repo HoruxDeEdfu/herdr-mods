@@ -49,7 +49,8 @@ The panel fills its whole block (tested between 320 and 900 px wide). It is a ca
   - on the left, the graph: 11 px lanes, 2 px vertical segments and horizontal joins at mid height, with colors `accent`, `ansi5`, `ansi2`, `ansi3`, `ansi6` and `ansi1`. Each commit is an 8 px dot; if it is a merge, the dot is hollow;
   - then the ref pills (HEAD `accent`, local `ansi4`, remote `ansi5`, tag `🏷` `ansi3`) and the subject;
   - below, the short hash, the author and the relative time.
-- Selecting a commit opens a detail view (maximum 260 px, `chrome` background) with the full hash, author, date, full message, the buttons **Cherry-pick en main…** ("Cherry-pick onto main…"), **Revertir…** ("Revert…") and **⋯**, and the file list (click = diff).
+  - a commit where a local branch was before a recent fast-forward (read from that branch's reflog: `merge X: Fast-forward`, `pull …: Fast-forward`, `fetch . refs/remotes/…: fast-forward`; up to 3 per branch, last 30 days) gets a pill `← <rama> antes del ff` (`ansi6`), since a fast-forward leaves no commit of its own.
+- Selecting a commit opens a detail view (maximum 260 px, `chrome` background) with the full hash, author, date, full message, for a pre-fast-forward commit the line "main estaba aquí antes del fast-forward de dev y avanzó a `<sha>` sin commit de merge. (`<time>`)", the buttons **Cherry-pick en main…** ("Cherry-pick onto main…"), **Revertir…** ("Revert…") and **⋯**, and the file list (click = diff).
 
 **Context menu:** native popup of 300 px next to the pointer. Dimmed title, 30 px rows, 1 px separators, dangerous actions in `blocked` and disabled ones in `dim`, with an explanation in the tooltip.
 
@@ -188,6 +189,7 @@ The panel fills its whole block (tested between 320 and 900 px wide). It is a ca
 
 - `herdr-app check mods/git-panel` and `herdr-app check mods/git-tabs` pass, and `herdr-app status` shows no errors with the panel open.
 - The **Git** button in the top bar shows the panel. After switching to another space and back, the chosen panel is remembered.
+- After `git merge dev` fast-forwards `main`, History shows `← main antes del ff` on main's previous commit, and its detail explains it. A `--no-ff` merge adds no such pill.
 - In a temporary repository with `main` and `feature/login` ahead: **Merge…** → `feature/login` shows "avanzará n commit(s) (fast-forward posible)" ("will advance n commit(s) (fast-forward possible)"), and on confirming, `main` points to the same commit as `feature/login`.
 - After that fast-forward, the result says "main avanzó a `<sha>`, sin commit de merge…". Merging another branch with **Siempre crear commit de merge** leaves a commit with two parents, and the next fast-forward preview in that repository starts on that mode with "Modo recordado…".
 - With HEAD on `feature/x`, the menu of `main` → `Fusionar feature/x → main…` asks to confirm the checkout, leaves HEAD on `main` and opens the preview with source `feature/x`. No merge happens without the second confirmation.

@@ -30,7 +30,7 @@ No se modificaron `files`, `changes` ni ningún mod o layout de Herdr.
   - Clic selecciona; doble clic cambia de rama, siempre con confirmación.
   - Clic derecho o **Acciones ⋯** abre el menú contextual.
   - ◆ indica una rama abierta en otro worktree.
-- **History:** los commits se cargan de 200 en 200. Clic sobre un commit muestra el detalle y sus archivos. "Todas las ramas" incluye remotas y tags.
+- **History:** los commits se cargan de 200 en 200. Un fast-forward no deja commit propio, así que el panel lee el reflog de cada rama local y marca con `← main antes del ff` el commit donde estaba la rama antes de avanzar (hasta 3 por rama, últimos 30 días); el detalle de ese commit lo explica. Clic sobre un commit muestra el detalle y sus archivos. "Todas las ramas" incluye remotas y tags.
 - **Changes:**
   - Grupos: Conflictos, En stage, Modificados y Sin seguimiento, con +/− líneas por archivo.
   - Clic en un archivo: muestra su diff debajo.

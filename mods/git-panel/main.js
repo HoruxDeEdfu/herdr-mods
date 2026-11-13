@@ -270,6 +270,12 @@ export default class GitPanel extends View {
       const skip = reset ? 0 : h.commits.length;
       const page = await Q.log(this.git(d.on), d.repo.root, { skip, limit: PAGE, all: h.all });
       h.commits = reset ? page : h.commits.concat(page);
+      if (reset) {
+        // Where each local branch was before a recent fast-forward (it leaves no commit to show).
+        const marks = await Q.ffMarks(this.git(d.on), d.repo.root, d.refs.filter((r) => r.type === "local").map((r) => r.name)).catch(() => []);
+        h.ffAt = {};
+        for (const e of marks) (h.ffAt[e.from] ??= []).push(e);
+      }
       h.graph = layoutGraph(h.commits);
       h.done = page.length < PAGE;
       if (h.selected && !h.commits.some((c) => c.hash === h.selected)) { h.selected = null; h.detail = null; }
@@ -528,6 +534,8 @@ export default class GitPanel extends View {
     }
     this.openMenu(ref.name, items, cx);
   }
+
+
 
   pinWorktree(path, cx) {
     this.pinned = { cwd: path, on: this.context().on };

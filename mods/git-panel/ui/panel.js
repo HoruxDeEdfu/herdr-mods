@@ -7,6 +7,7 @@ import { theme, settings, home } from "herdr";
 import { button, pill, notice, spinner, relTime, basename, emptyState, sectionTitle, ICON, stop } from "./kit.js";
 import { renderSheet } from "./sheets.js";
 import { diffView } from "./diffview.js";
+import { ffMarkText } from "../git/queries.js";
 
 const mono = () => settings().font_family ?? "JetBrains Mono";
 const tilde = (p) => { const h = home(); return p && h && p.startsWith(h + "/") ? "~" + p.slice(h.length) : p; };
@@ -258,6 +259,7 @@ function history(v, t) {
       .when(graphOn, (e) => e.child(graphCell(i)))
       .child(v_flex().flex_1().min_w(0).py(4).gap(2).justify_center()
       .child(h_flex().gap(5).min_w(0).items_center().children(labels).when(c.refs.length > 4, (e) => e.child(div().text_size(10).text_color(t.dim).child(`+${c.refs.length - 4}`)))
+        .children((h.ffAt?.[c.hash] ?? []).slice(0, 2).map((m) => pill(t, `← ${m.branch} antes del ff`, t.ansi6)))
         .when(c.parents.length > 1, (e) => e.child(div().text_size(10.5).text_color(t.ansi5).child("⑂")))
         .child(div().min_w(0).truncate().child(c.subject)))
       .child(h_flex().gap(8).text_size(10.5).text_color(t.dim)
@@ -291,6 +293,7 @@ function commitDetail(v, t) {
       .child(div().id("cd-x").px(4).text_color(t.dim).cursor_pointer().on_click((_e, cx) => { h.selected = null; h.detail = null; cx.notify(); }).child("×")))
     .child(div().text_size(11.5).text_color(t.dim).child(`${c.author} <${c.email}> · ${new Date(c.at * 1000).toLocaleString()}${c.parents.length > 1 ? ` · merge de ${c.parents.length} padres` : ""}`))
     .child(div().text_color(t.foreground).child(det.body || c.subject))
+    .children((h.ffAt?.[c.hash] ?? []).map((m, i) => notice(t, "info", `${ffMarkText(m)} (${relTime(m.at / 1000)})`, `cd-ff-${i}`)))
     .child(h_flex().gap(6).flex_wrap()
       .child(button(t, "cd-pick", `Cherry-pick en ${v.data.status.head ?? "HEAD"}…`, (_e, cx) => v.askPick(c, false, cx), { small: true, disabled: Boolean(v.op) }))
       .child(button(t, "cd-revert", "Revertir…", (_e, cx) => v.askPick(c, true, cx), { small: true, disabled: Boolean(v.op) }))
