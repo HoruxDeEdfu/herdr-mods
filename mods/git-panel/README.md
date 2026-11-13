@@ -21,7 +21,7 @@ No se modificaron `files`, `changes` ni ningún mod o layout de Herdr.
 
 ## Uso
 
-- **Abrir:** botón **Git** en la barra superior, junto a Files y Changes.
+- **Abrir:** botón **Git** en la barra superior, junto a Files y Changes. El botón muestra cuántos archivos tienen cambios sin commit, o **⚠n** en rojo si hay una operación a medias o conflictos, aunque el panel esté oculto.
 - **Cabecera:**
   - Muestra el repositorio, la rama (HEAD), el upstream con ↑ahead ↓behind y el estado del working tree.
   - Si hay un merge, rebase, cherry-pick, revert o bisect en curso, aparece un aviso con **Ver** y **Abortar** (siempre con confirmación), y **Continuar** en cherry-pick, revert y rebase. El rebase muestra rama, base y progreso ("Rebase de feature sobre main · 2/5"); el bisect se cierra con **Terminar bisect** (`git bisect reset`). Si hay archivos sin guardar en el editor, Continuar y Abortar se bloquean.

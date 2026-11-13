@@ -1,6 +1,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, ScrollHandle } from "gpui-base";
 import { spaces, panes, run, openOverlay, theme, window, shared, layout, settings } from "herdr";
+import { gitBadge } from "./badge.js"; // git-tabs
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -90,6 +91,7 @@ export default class Tabs extends View {
     // git-tabs: Herdr's tab bar plus a "Git" panel button (mods/git-panel).
     const enabled = [...(shared("workspace.panels") ?? ["files", "changes"]), "git"];
     this.syncPanel(space, panel, body, enabled);
+    const badge = gitBadge(shared("git-panel.summary"));
     const panelButton = (id, label, icon) => {
       const on = panel && !panel.hidden && body?.active === id;
       return h_flex().id(`panel-${id}`).h(26).px(8).gap(5).flex_none().items_center().rounded(6)
@@ -98,7 +100,10 @@ export default class Tabs extends View {
         .on_click(() => {
           if (on) run("layout.hide", { id: "panel" });
           else { run("layout.select", { stack: "panel-body", child: id }); run("layout.show", { id: "panel" }); }
-        }).child(svg(icon).size(14)).child(label);
+        }).child(svg(icon).size(14)).child(label)
+        // git-tabs: on the Git button, uncommitted files, or ⚠ for a stopped operation / conflicts.
+        .when(id === "git" && Boolean(badge), el => el.tooltip(badge.tip).child(div().px(4).h(15).flex().items_center().rounded(4)
+          .text_size(10.5).text_color(badge.tone === "blocked" ? t.blocked : t.ansi3).bg((badge.tone === "blocked" ? t.blocked : t.ansi3) + "22").child(badge.text)));
     };
     return h_flex().size_full().min_w(0).px(10).pl(lightsPadding).gap(3).items_center().bg(t.chrome).border_b(1).border_color(t.border)
       .on_mouse_up("left", () => { this.pressed = null; })

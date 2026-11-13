@@ -354,3 +354,11 @@ export function inProgressCheck({ repo, status, ops, drafts }, action) {
   const title = action === "abort" ? (op === "bisect" ? "¿Terminar el bisect?" : `¿Abortar el ${op} en curso?`) : `Continuar el ${op}`;
   return { blocks, op, command, title, detail: action === "abort" ? ABORT_TEXT[op] ?? "" : "" };
 }
+
+// ---------- summary for the tab bar's Git button ----------
+/** What git-tabs shows next to "Git": shared as "git-panel.summary". null when there's no repository. */
+export function summaryFor(d) {
+  if (!d?.status) return null;
+  const s = d.status.summary;
+  return { root: d.repo.root, on: d.on ?? null, total: s.total, conflicts: s.conflicts, op: d.ops?.[0] ?? null, head: d.status.head ?? null };
+}

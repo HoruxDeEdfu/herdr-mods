@@ -194,7 +194,8 @@ export default class GitPanel extends View {
     if (this.tab === "history" && visible && !this.history.done && (this.historyEnd ?? 0) >= this.history.commits.length - 20) this.moreHistory(cx);
     if (this.loading || this.op) return;
     const remote = Boolean(this.context().on);
-    if (this.stale && visible && now - this.stale >= 400 && now - this.lastRefresh >= 1500) { this.stale = 0; this.refresh(cx); return; }
+    // Hidden, file events still refresh (more slowly): the tab bar's Git badge reads the result.
+    if (this.stale && now - this.stale >= 400 && now - this.lastRefresh >= (visible ? 1500 : 5000)) { this.stale = 0; this.refresh(cx); return; }
     const every = !visible ? 60000 : remote ? 20000 : 10000;
     if (now - this.lastRefresh >= every) this.refresh(cx);
   }
@@ -214,7 +215,7 @@ export default class GitPanel extends View {
         const git = this.git(c.on);
         const repo = await Q.detect(git, c.cwd);
         if (this.contextKey() !== key) return;
-        if (!repo) { this.data = null; this.error = "notrepo"; this.unwatch(); return; }
+        if (!repo) { this.data = null; this.error = "notrepo"; this.unwatch(); this.publish(null); return; }
         const [status, refs, ops, worktrees, remotes, drafts] = await Promise.all([
           Q.status(git, repo.root), Q.refs(git, repo.root), Q.inProgress(git, repo.root, this.exists(c.on)),
           Q.worktrees(git, repo.root), Q.remotes(git, repo.root), this.readDrafts(c.on, repo.root)]);
@@ -222,6 +223,7 @@ export default class GitPanel extends View {
         const [staged, unstaged, account] = await Promise.all([Q.numstat(git, repo.root, true), Q.numstat(git, repo.root, false), this.readAccount(git, repo.root, remotes, c.on)]);
         const rebase = ops.includes("rebase") ? await Q.rebaseInfo(git, repo.root, (p) => readTextFile(p, { on: c.on })).catch(() => null) : null;
         this.data = { on: c.on, repo, status, refs, ops, worktrees, remotes, drafts, account, rebase, numstat: { staged, unstaged } };
+        this.publish(F.summaryFor(this.data));
         this.syncChangeSelection(cx);
         this.error = null;
         const fp = JSON.stringify([repo.root, status.oid, status.head, refs.map((r) => r.ref + r.oid)]);
@@ -235,6 +237,14 @@ export default class GitPanel extends View {
         cx.notify();
       }
     });
+  }
+
+  /** The tab bar's Git button reads this ("git-panel.summary"); only written when it changes. */
+  publish(sum) {
+    const json = JSON.stringify(sum);
+    if (json === this.published) return;
+    this.published = json;
+    if (this.p.block) setShared("git-panel.summary", sum); // the popup menu copy never publishes
   }
 
   unwatch() { this.watchGen = (this.watchGen ?? 0) + 1; this.watching = null; }
