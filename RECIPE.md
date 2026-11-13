@@ -16,7 +16,7 @@ The panel fills its whole block (tested between 320 and 900 px wide). It is a ca
 1. **Header** (40 px + 26 px):
    - First line: branch icon (`git-branch.svg`, 15 px, `muted`), repository name (the root folder, in semibold) and the pills `worktree` (`ansi5`) if it is a linked worktree and `fijado ×` ("pinned ×") (`accent`) if the panel is pinned to a worktree. On the right, a spinner while loading and a button bar 24 px high, like Fork's: **Fetch**, **Pull ↓n**, **Push ↑n**, **Merge…** and **⇄** (compare). Pull and Push act on the current branch and only show the number if there is something to fetch or publish; in that case they are highlighted (`solid` / `solid_foreground`). Push says **Publicar** ("Publish") if the branch has no upstream. Below 460 px they are compacted (`↻`, `↓n`, `↑n`).
    - Second line (11.5 px, `muted`): pill with the current branch (`accent`), or `HEAD desacoplado · <sha>` ("detached HEAD") (`blocked`); `→ upstream ↑a ↓b` (↑ in `ansi2` and ↓ in `ansi3` when they are greater than zero), and on the right the working tree state: `✓ limpio` ("clean") (`ansi2`) or `n conflictos` ("conflicts") (`blocked`), `n en stage` ("staged") (`ansi2`), `n modif.` ("modified") (`ansi3`) and `n nuevos` ("new") (`dim`).
-   - If an operation is in progress, a red strip appears (`blocked` at 18 %): "Merge en curso · n archivo(s) en conflicto" ("Merge in progress · n file(s) in conflict") with the buttons **Ver** ("View"), **Continuar** ("Continue") (only in cherry-pick and revert) and **Abortar …** ("Abort …") (`blocked`). In rebase and bisect it only says "Termínalo desde la terminal" ("Finish it from the terminal").
+   - If an operation is in progress, a red strip appears (`blocked` at 18 %): "Merge en curso · n archivo(s) en conflicto" ("Merge in progress · n file(s) in conflict") with the buttons **Ver** ("View"), **Continuar** ("Continue") (cherry-pick, revert and rebase) and **Abortar …** ("Abort …") (`blocked`). A rebase reads "Rebase de `<rama>` sobre `<base>` · n/m" (from `rebase-merge/` or `rebase-apply/`: `head-name`, `onto` named with `name-rev`, `msgnum`/`end`). A bisect shows **Terminar bisect** ("End bisect", `git bisect reset`).
    - While a write is running: spinner and "Merge feature → main…" in `working`.
 2. **Tabs** (31 px): `Changes (n)`, `Branches` and `History`, underlined with 2 px `accent` when active. On the right, `Log n` opens the operation log.
 3. **Body**: the active tab, or a **sheet** that replaces it (confirmations, merge preview, diffs). There are no dialogs that cover the whole window. Sheets have a 38 px title with ×, scrollable content and a footer with the buttons aligned to the right.
@@ -96,8 +96,10 @@ The panel fills its whole block (tested between 320 and 900 px wide). It is a ca
   - Click on a file in conflict: the file with its `<<<<<<<` / `=======` / `>>>>>>>` blocks; your side (ours) on `ansi4`, the incoming side (theirs) on `ansi5`.
   - Options: **Abrir en Files** ("Open in Files"), **Usar una versión entera** ("Use a whole version") (with confirmation: `checkout --ours/--theirs` + `add`) or **Marcar resuelto ✓** ("Mark resolved") (asks for confirmation if markers remain).
   - Commit with an empty message during a merge = `commit --no-edit`, which concludes the merge.
-  - **Continuar** = `-c core.editor=true cherry-pick|revert --continue`.
-  - **Abortar** = `merge|cherry-pick|revert --abort`, always with confirmation.
+  - **Continuar** = `-c core.editor=true cherry-pick|revert|rebase --continue`. If the rebase stops again at a later commit, it says so (warning) and goes to Changes instead of reporting an error; a commit left empty after resolving gets a sentence suggesting abort or `git rebase --skip` from the terminal (the panel never skips commits).
+  - **Abortar** = `merge|cherry-pick|revert|rebase --abort` or `bisect reset`, always with confirmation that names the command and what each one restores.
+  - Continue and abort rewrite files, so unsaved editor files in the worktree block them (not for bisect). Both re-read the repository right before running.
+  - In a rebase the sides swap: "ours" is the base being rebased onto ("main (base del rebase)") and "theirs" is "tu commit de `<rama>`". The conflict view and "Usar una versión entera" use those labels.
 - **Pull** = fetch of the upstream and then, as in Fork:
   - if there is nothing to integrate, only a notification (`notify`, info level);
   - if it is a fast-forward with no blockers and no warnings other than non-conflicting local changes, it is recomputed and `merge --ff-only` is run directly, with a success notification;
@@ -179,7 +181,7 @@ The panel fills its whole block (tested between 320 and 900 px wide). It is a ca
 - `merge-tree` returns 1 when there are conflicts, and `merge-base` and `rev-parse --verify` return 1 when the answer is "no". Mark them as expected or the log fills with false errors; the same goes for "not a git repository" (128) while another space is focused.
 - `git log %s` joins the lines of the first paragraph: for there to be a body, the message needs a blank line.
 - If `git push` is run with the explicit `<rama>:<rama>` branch, it never pushes another branch by accident.
-- Limits: Changes shows 1000 files; diffs are cut at 6000 rows; history loads 200 at a time (navigating from a branch searches up to 5000 commits); the graph draws 6 lanes; the log keeps 200 entries. Rebase and bisect are detected but not controlled.
+- Limits: Changes shows 1000 files; diffs are cut at 6000 rows; history loads 200 at a time (navigating from a branch searches up to 5000 commits); the graph draws 6 lanes; the log keeps 200 entries. Rebase and bisect can be continued/aborted/ended, but not started, skipped or edited from the panel.
 - In spaces on another machine (`on`) there is no `watchFolder`: only the timer. The editor is read-only there.
 - When testing the panel by driving it from outside, **always pin it to a temporary repository**: if the person switches space in the meantime, the panel moves to their real repo.
 
@@ -201,5 +203,6 @@ The panel fills its whole block (tested between 320 and 900 px wide). It is a ca
 - Rejected push (the remote has a new commit) shows "El remoto rechazó el push…" ("The remote rejected the push…") and **Pull…**; Pull fetches and opens the preview with `origin/<rama>`.
 - History with "Todas las ramas" draws the forks and merges with colored lanes, and `g` hides it.
 - A cherry-pick with a conflict can be resolved with "Usar el commit del cherry-pick" ("Use the cherry-pick's commit") and **Continuar**, and ends with a new commit and a clean state.
+- `git rebase main` on a branch that conflicts stops: the header shows "Rebase de feature sobre main · 1/n", the conflict view labels main as the base, "Usar tu commit" + **Continuar** finishes the rebase, and **Abortar rebase** (on another stopped rebase) leaves the branch at its original commit.
 - The Log shows each of those commands with its exit code.
 - In a temporary repository with a remote `https://github.com/...`: pinning account B makes `git credential fill` return `username=B` inside the repo and `gh`'s active account outside it. Removing the pin leaves `.git/config` as it was.

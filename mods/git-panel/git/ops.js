@@ -98,16 +98,22 @@ export async function revert(git, repo, sha, mainline) {
   throw new GitError(r, args);
 }
 
-/** kind: "merge" | "cherry-pick" | "revert". Never touches anything Git didn't start. */
+/** kind: "merge" | "cherry-pick" | "revert" | "rebase" | "bisect" (bisect ends with reset). Never touches anything Git didn't start. */
 export async function abortOp(git, repo, kind) {
-  const args = [kind, "--abort"];
+  const args = kind === "bisect" ? ["bisect", "reset"] : [kind, "--abort"];
   return ok(await git.write(repo.root, args, { lock: repo.commonDir, label: `Abortar ${kind}` }), args);
 }
 
-/** Continues a cherry-pick/revert after conflicts, keeping Git's message (no editor). */
+/**
+ * Continues a cherry-pick/revert/rebase after conflicts, keeping Git's message (no editor).
+ * Returns { conflicts }: a rebase (or a multi-commit pick) may stop again at the next commit.
+ */
 export async function continueOp(git, repo, kind) {
   const args = ["-c", "core.editor=true", kind, "--continue"];
-  return ok(await git.write(repo.root, args, { lock: repo.commonDir, timeout: 300000, label: `Continuar ${kind}` }), args);
+  const r = await git.write(repo.root, args, { lock: repo.commonDir, timeout: 300000, label: `Continuar ${kind}` });
+  if (r.code === 0) return { conflicts: false };
+  if (/CONFLICT|could not apply|after resolving the conflicts/i.test(r.stdout + r.stderr)) return { conflicts: true };
+  throw new GitError(r, args);
 }
 
 /**

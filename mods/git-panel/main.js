@@ -220,7 +220,8 @@ export default class GitPanel extends View {
           Q.worktrees(git, repo.root), Q.remotes(git, repo.root), this.readDrafts(c.on, repo.root)]);
         if (this.contextKey() !== key) return;
         const [staged, unstaged, account] = await Promise.all([Q.numstat(git, repo.root, true), Q.numstat(git, repo.root, false), this.readAccount(git, repo.root, remotes, c.on)]);
-        this.data = { on: c.on, repo, status, refs, ops, worktrees, remotes, drafts, account, numstat: { staged, unstaged } };
+        const rebase = ops.includes("rebase") ? await Q.rebaseInfo(git, repo.root, (p) => readTextFile(p, { on: c.on })).catch(() => null) : null;
+        this.data = { on: c.on, repo, status, refs, ops, worktrees, remotes, drafts, account, rebase, numstat: { staged, unstaged } };
         this.syncChangeSelection(cx);
         this.error = null;
         const fp = JSON.stringify([repo.root, status.oid, status.head, refs.map((r) => r.ref + r.oid)]);
@@ -537,6 +538,8 @@ export default class GitPanel extends View {
 
 
 
+
+
   pinWorktree(path, cx) {
     this.pinned = { cwd: path, on: this.context().on };
     this.sheet = null; this.refresh(cx); cx.notify();
@@ -694,23 +697,38 @@ export default class GitPanel extends View {
   }
 
   // ---------- abort ----------
-  /** kind: "merge" | "cherry-pick" | "revert" (whatever is in progress). */
-  askAbort(cx, kind = this.data?.ops[0] ?? "merge") {
-    if (!["merge", "cherry-pick", "revert"].includes(kind)) return;
-    this.sheet = { ctx: this.bound(), kind: "confirm", title: `¿Abortar el ${kind} en curso?`,
-      detail: `Git devolverá la rama y los archivos al estado anterior al ${kind}. Las resoluciones de conflictos que hayas hecho se perderán. Los cambios que tenías antes de empezar se conservan cuando Git puede reconstruirlos.`,
-      action: `Abortar ${kind}`, danger: true, run: (cx) => this.run(cx, `Abortar ${kind}`, (f) => O.abortOp(f.git, f.repo, kind), `${kind} abortado.`) };
+  /** Whatever is in progress: merge, cherry-pick, revert, rebase (--abort) or bisect (reset). Always confirmed. */
+  askAbort(cx) {
+    if (!this.data) return;
+    const c = F.inProgressCheck(this.data, "abort"), kind = c.op;
+    if (c.blocks.length) { this.say("block", c.blocks.map((b) => b.text).join(" ")); cx.notify(); return; }
+    const label = kind === "bisect" ? "Terminar bisect" : `Abortar ${kind}`;
+    this.sheet = { ctx: this.bound(), kind: "confirm", title: c.title, detail: c.detail, command: c.command,
+      action: label, danger: kind !== "bisect", run: (cx) => this.run(cx, label, async (f) => {
+        const again = F.inProgressCheck(f, "abort");
+        if (again.op !== kind || again.blocks.length) throw Object.assign(new Error(again.blocks[0]?.text ?? "La operación en curso cambió. Vuelve a intentarlo."), { plain: true });
+        return O.abortOp(f.git, f.repo, kind);
+      }, kind === "bisect" ? "Bisect terminado." : `${kind} abortado.`) };
     cx.notify();
   }
 
   /** After resolving a cherry-pick/revert: commit with Git's message and go on. */
   continueOp(cx) {
-    const d = this.data, kind = d?.ops[0];
-    if (!["cherry-pick", "revert"].includes(kind)) return;
-    if (d.status.summary.conflicts) { this.say("block", "Quedan conflictos: resuélvelos y márcalos con ✓ primero."); cx.notify(); return; }
+    const d = this.data;
+    if (!d) return;
+    const c = F.inProgressCheck(d, "continue"), kind = c.op;
+    if (c.blocks.length) { this.say("block", c.blocks.map((b) => b.text).join(" ")); cx.notify(); return; }
     cx.spawn(async (cx) => {
       await this.act(cx, `Continuar ${kind}`, async () => {
-        try { const f = await this.fresh(); await O.continueOp(f.git, f.repo, kind); this.say("ok", `${kind} completado.`); }
+        try {
+          const f = await this.fresh();
+          const again = F.inProgressCheck(f, "continue");
+          if (again.op !== kind || again.blocks.length) { this.say("block", again.blocks[0]?.text ?? "La operación en curso cambió."); return; }
+          const r = await O.continueOp(f.git, f.repo, kind);
+          if (r.conflicts) { this.say("warn", `El ${kind} avanzó y se detuvo en otro commit con conflictos. Resuélvelos y vuelve a pulsar Continuar.`); this.setTab("changes"); }
+          else if ((await Q.inProgress(f.git, f.repo.root, this.exists(f.on))).includes(kind)) this.say("info", `El ${kind} sigue en curso.`);
+          else this.say("ok", `${kind} completado.`);
+        }
         catch (e) { this.say("block", explain(e)); }
       });
     });
@@ -787,8 +805,7 @@ export default class GitPanel extends View {
     const s = this.sheet;
     if (!s || s.kind !== "conflict") return;
     const back = s, head = this.data?.status.head ?? "HEAD";
-    const mine = s.op === "merge" ? `la versión de ${head}` : `la versión de ${head} (antes del ${s.op})`;
-    const theirs = s.op === "merge" ? "la versión que llega en el merge" : `la versión del commit del ${s.op}`;
+    const L = F.sideLabels(s.op, head, this.data?.rebase), mine = L.oursLong, theirs = L.theirsLong;
     this.sheet = { ctx: s.ctx, kind: "confirm", title: `Resolver ${s.path} con ${side === "ours" ? mine : theirs}`,
       detail: `El archivo queda exactamente como ${side === "ours" ? mine : theirs} y se marca como resuelto. Los cambios del otro lado en este archivo se descartan (siguen en su commit, nada se pierde del historial).`,
       action: "Resolver así", danger: true, back,

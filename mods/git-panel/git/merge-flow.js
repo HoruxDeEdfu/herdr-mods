@@ -316,3 +316,41 @@ export function ffPreviewLine(p, mode) {
 export function ffResultLine(target, head) {
   return `${target} avanzó a ${short(head)}, sin commit de merge; elige "${NO_FF_LABEL}" si quieres verlo en el grafo.`;
 }
+
+// ---------- operations in progress: continue / abort ----------
+
+/** Who "ours" and "theirs" are for the operation in progress. In a rebase they swap. */
+export function sideLabels(op, head, rebase) {
+  if (op === "rebase") {
+    const base = rebase?.ontoName ?? (rebase?.onto ? rebase.onto.slice(0, 7) : "la base");
+    const mine = rebase?.branch ?? "tu rama";
+    return { ours: `${base} (base del rebase)`, theirs: `tu commit de ${mine}`, oursLong: `la versión de ${base}, sobre la que se reescribe ${mine}`, theirsLong: `la versión de tu commit de ${mine} que se está aplicando` };
+  }
+  if (op === "merge") return { ours: head, theirs: "lo que llega", oursLong: `la versión de ${head}`, theirsLong: "la versión que llega en el merge" };
+  return { ours: `${head} (antes)`, theirs: `el commit del ${op}`, oursLong: `la versión de ${head} (antes del ${op})`, theirsLong: `la versión del commit del ${op}` };
+}
+
+const ABORT_TEXT = {
+  merge: "Git devolverá la rama y los archivos al estado anterior al merge. Las resoluciones de conflictos que hayas hecho se perderán. Los cambios que tenías antes de empezar se conservan cuando Git puede reconstruirlos.",
+  "cherry-pick": "Git devolverá la rama y los archivos al estado anterior al cherry-pick. Las resoluciones de conflictos que hayas hecho se perderán.",
+  revert: "Git devolverá la rama y los archivos al estado anterior al revert. Las resoluciones de conflictos que hayas hecho se perderán.",
+  rebase: "Git devolverá la rama al commit donde estaba antes del rebase. Los commits ya reaplicados y las resoluciones de conflictos se descartan; tus commits originales siguen intactos.",
+  bisect: "Git terminará el bisect y volverá a la rama o el commit donde lo empezaste. No cambia ningún commit.",
+};
+
+/**
+ * Before continuing or aborting what's in progress: both rewrite files in the
+ * work tree, so unsaved editor work blocks them. Returns { blocks, title, detail, command }.
+ */
+export function inProgressCheck({ repo, status, ops, drafts }, action) {
+  const op = ops[0] ?? null, blocks = [];
+  if (!op) blocks.push({ id: "none", text: "No hay ninguna operación en curso." });
+  const can = action === "abort" ? ["merge", "cherry-pick", "revert", "rebase", "bisect"] : ["cherry-pick", "revert", "rebase"];
+  if (op && !can.includes(op)) blocks.push({ id: "unsupported", text: `El panel no puede ${action === "abort" ? "abortar" : "continuar"} ${opName[op] ?? op}.` });
+  if (action === "continue" && status.summary.conflicts) blocks.push({ id: "conflicts", text: `Quedan ${status.summary.conflicts} archivo(s) en conflicto: resuélvelos y márcalos con ✓ primero.` });
+  const unsaved = unsavedIn(rootsOf(repo), drafts);
+  if (unsaved.length && op !== "bisect") blocks.push({ id: "unsaved", text: `Hay ${unsaved.length} archivo(s) sin guardar en el editor (${unsaved.map((p) => rel(repo, p)).slice(0, 3).join(", ")}). Guárdalos o descártalos antes: Git va a reescribir archivos.` });
+  const command = !op ? "" : action === "abort" ? (op === "bisect" ? "git bisect reset" : `git ${op} --abort`) : `git -c core.editor=true ${op} --continue`;
+  const title = action === "abort" ? (op === "bisect" ? "¿Terminar el bisect?" : `¿Abortar el ${op} en curso?`) : `Continuar el ${op}`;
+  return { blocks, op, command, title, detail: action === "abort" ? ABORT_TEXT[op] ?? "" : "" };
+}

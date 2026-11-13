@@ -15,6 +15,7 @@ const RULES = [
   [/Authentication failed|could not read Username|terminal prompts disabled|Permission denied \(publickey/i, "El remoto pidió credenciales. Ejecuta la operación una vez desde una terminal para autenticarte."],
   [/Could not resolve host|unable to access|Connection (timed out|refused)|Could not read from remote/i, "No se pudo contactar con el remoto. Revisa la conexión o la URL."],
   [/timed out|timeout/i, "La operación tardó demasiado y se detuvo."],
+  [/No changes - did you forget to use 'git add'|nothing to commit|The previous cherry-pick is now empty/i, "Después de resolver, este commit ya no cambia nada. Git no puede continuar con un commit vacío: aborta, o termínalo desde la terminal (git rebase --skip lo omite)."],
   [/CONFLICT/, "El merge tiene conflictos. Resuélvelos o aborta el merge."],
   [/not a git repository/i, "Esta carpeta no es un repositorio Git."],
 ];
@@ -25,6 +26,7 @@ function files(stderr) {
 }
 
 export function explain(error) {
+  if (error?.plain) return error.message; // the panel's own sentence, not Git's
   const text = String(error?.stderr || error?.message || error || "");
   for (const [re, msg] of RULES) {
     const m = re.exec(text);

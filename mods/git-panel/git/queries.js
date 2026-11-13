@@ -219,3 +219,26 @@ export function ffMarkText(e) {
   const by = e.source === "pull" ? "de un Pull" : e.source ? `del fast-forward de ${e.source}` : "de un fast-forward";
   return `${e.branch} estaba aquí antes ${by} y avanzó a ${e.to.slice(0, 7)} sin commit de merge.`;
 }
+
+/**
+ * A rebase Git has stopped in: which branch, onto what, and how far.
+ * `read(path)` returns a file's text or null. Returns null when no rebase is in progress.
+ */
+export async function rebaseInfo(git, root, read) {
+  const r = await git.read(root, ["rev-parse", "--path-format=absolute", "--git-path", "rebase-merge", "--git-path", "rebase-apply"]);
+  if (r.code !== 0) return null;
+  const [merge, apply] = r.stdout.split("\n");
+  const get = async (dir, f) => { try { const t = await read(`${dir}/${f}`); return t == null ? null : t.trim(); } catch { return null; } };
+  for (const [dir, done, total] of [[merge, "msgnum", "end"], [apply, "next", "last"]]) {
+    const head = dir && await get(dir, "head-name");
+    if (!head) continue;
+    const onto = await get(dir, "onto");
+    const ontoName = onto ? (await git.read(root, ["name-rev", "--name-only", "--no-undefined", "--refs=refs/heads/*", "--refs=refs/remotes/*", onto], { expected: [0, 128] })).stdout.trim().replace(/~\d+$|\^\d+$/, "") || null : null;
+    return {
+      branch: head.replace(/^refs\/heads\//, ""), onto, ontoName: ontoName && !/[~^]/.test(ontoName) ? ontoName : null,
+      step: Number(await get(dir, done)) || 0, total: Number(await get(dir, total)) || 0,
+      stopped: await get(dir, "stopped-sha"),
+    };
+  }
+  return null;
+}

@@ -24,7 +24,8 @@ No se modificaron `files`, `changes` ni ningún mod o layout de Herdr.
 - **Abrir:** botón **Git** en la barra superior, junto a Files y Changes.
 - **Cabecera:**
   - Muestra el repositorio, la rama (HEAD), el upstream con ↑ahead ↓behind y el estado del working tree.
-  - Si hay un merge, rebase, cherry-pick, revert o bisect en curso, aparece un aviso. En el caso del merge, con un botón para abortarlo.
+  - Si hay un merge, rebase, cherry-pick, revert o bisect en curso, aparece un aviso con **Ver** y **Abortar** (siempre con confirmación), y **Continuar** en cherry-pick, revert y rebase. El rebase muestra rama, base y progreso ("Rebase de feature sobre main · 2/5"); el bisect se cierra con **Terminar bisect** (`git bisect reset`). Si hay archivos sin guardar en el editor, Continuar y Abortar se bloquean.
+  - En un rebase, "ours" es la base (main) y "theirs" es tu commit: las etiquetas del conflicto lo dicen así.
   - Barra de acciones como la de Fork: **Fetch**, **Pull ↓n**, **Push ↑n** (sobre la rama actual; los números aparecen solo si hay algo que traer o publicar, y el botón se resalta), **Merge…** y **⇄** (comparar)
 - **Branches:**
   - Clic selecciona; doble clic cambia de rama, siempre con confirmación.
@@ -143,6 +144,6 @@ Están en `~/herdr-git-panel-dev/test/` (`git.test.mjs`, `stage2.test.mjs` y `st
 
 ## Límites conocidos
 
-- Rebase y bisect se detectan y se muestran, pero se continúan o abortan desde la terminal.
+- Rebase y bisect no se inician desde el panel, y el panel nunca omite commits (`rebase --skip`): eso queda para la terminal.
 - El grafo dibuja hasta 6 carriles; los demás se agrupan en el último, en gris.
 - En espacios de otras máquinas no hay watcher: el panel se refresca cada 20 s.

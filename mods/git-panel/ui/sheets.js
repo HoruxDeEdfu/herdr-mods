@@ -5,7 +5,7 @@ import { v_flex, h_flex, Input } from "gpui-base";
 import { settings } from "herdr";
 import { button, pill, notice, spinner, relTime, sectionTitle, ICON, stop } from "./kit.js";
 import { displayArgv } from "../git/runner.js";
-import { ffPreviewLine, ffResultLine } from "../git/merge-flow.js";
+import { ffPreviewLine, ffResultLine, sideLabels } from "../git/merge-flow.js";
 import { diffView } from "./diffview.js";
 
 const mono = () => settings().font_family ?? "JetBrains Mono";
@@ -163,7 +163,9 @@ function resultSheet(v, t, s) {
 }
 
 function confirmSheet(v, t, s) {
-  const content = v_flex().gap(10).child(div().text_color(t.foreground).child(s.detail)).when(Boolean(s.error), (e) => e.child(notice(t, "block", s.error)));
+  const content = v_flex().gap(10).child(div().text_color(t.foreground).child(s.detail))
+    .when(Boolean(s.command), (e) => e.child(div().font_family(mono()).text_size(11).text_color(t.dim).child(s.command)))
+    .when(Boolean(s.error), (e) => e.child(notice(t, "block", s.error)));
   return frame(v, t, s.title, content, h_flex().gap(8)
     .child(button(t, "cf-cancel", "Cancelar", (_e, cx) => v.closeSheet(cx), { disabled: s.running }))
     .child(button(t, "cf-go", s.running ? "Ejecutando…" : s.action, (_e, cx) => s.run(cx), { kind: s.danger ? "danger" : "primary", disabled: s.running || Boolean(v.op) })));
@@ -279,8 +281,7 @@ function pickCommitSheet(v, t, s) {
 
 function conflictSheet(v, t, s) {
   const head = v.data?.status.head ?? "HEAD";
-  const mine = s.op === "merge" ? head : `${head} (antes)`;
-  const theirs = s.op === "merge" ? "lo que llega" : `el commit del ${s.op}`;
+  const L = sideLabels(s.op, head, v.data?.rebase), mine = L.ours, theirs = L.theirs;
   return v_flex().size_full().min_h(0)
     .child(h_flex().flex_none().h(38).px(10).gap(8).items_center().border_b(1).border_color(t.border)
       .child(div().flex_1().min_w(0).truncate().font_semibold().child(`Conflicto · ${s.path}`))

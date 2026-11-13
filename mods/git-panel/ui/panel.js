@@ -63,15 +63,22 @@ function header(v, t) {
         .when(s.unstaged > 0, (e) => e.child(div().text_color(t.ansi3).child(`${s.unstaged} modif.`)))
         .when(s.untracked > 0, (e) => e.child(div().text_color(t.dim).child(`${s.untracked} nuevos`))));
   const col = v_flex().flex_none().border_b(1).border_color(t.border).child(top).child(line);
-  const opName = { merge: "Merge en curso", rebase: "Rebase en curso", "cherry-pick": "Cherry-pick en curso", revert: "Revert en curso", bisect: "Bisect en curso" };
   if (d.ops.length) col.child(h_flex().mx(10).mb(8).px(10).py(6).gap(8).items_center().rounded(7).bg(t.blocked + "18").border_1().border_color(t.blocked + "55")
-    .child(div().text_color(t.blocked).child("⚠")).child(div().flex_1().min_w(0).child(`${opName[d.ops[0]] ?? d.ops[0]}${s.conflicts ? ` · ${s.conflicts} archivo(s) en conflicto` : ""}`))
-    .when(["merge", "cherry-pick", "revert"].includes(d.ops[0]), (e) => e.child(button(t, "h-conflicts", "Ver", (_e, cx) => { v.setTab("changes"); v.sheet = null; cx.notify(); }, { small: true }))
+    .child(div().text_color(t.blocked).child("⚠")).child(div().flex_1().min_w(0).child(`${opText(d)}${s.conflicts ? ` · ${s.conflicts} archivo(s) en conflicto` : ""}`))
+    .when(["merge", "cherry-pick", "revert", "rebase"].includes(d.ops[0]), (e) => e.child(button(t, "h-conflicts", "Ver", (_e, cx) => { v.setTab("changes"); v.sheet = null; cx.notify(); }, { small: true }))
       .when(d.ops[0] !== "merge", (e) => e.child(button(t, "h-continue", "Continuar", (_e, cx) => v.continueOp(cx), { kind: "primary", small: true, disabled: busy || s.conflicts > 0, tooltip: s.conflicts ? "Quedan conflictos" : `git ${d.ops[0]} --continue` })))
-      .child(button(t, "h-abort", `Abortar ${d.ops[0]}`, (_e, cx) => v.askAbort(cx, d.ops[0]), { kind: "danger", small: true, disabled: busy })))
-    .when(!["merge", "cherry-pick", "revert"].includes(d.ops[0]), (e) => e.child(div().text_size(11).text_color(t.dim).child("Termínalo desde la terminal"))));
+      .child(button(t, "h-abort", `Abortar ${d.ops[0]}`, (_e, cx) => v.askAbort(cx), { kind: "danger", small: true, disabled: busy })))
+    .when(d.ops[0] === "bisect", (e) => e.child(button(t, "h-bisect", "Terminar bisect", (_e, cx) => v.askAbort(cx), { small: true, disabled: busy, tooltip: "git bisect reset" }))));
   if (v.op) col.child(h_flex().px(12).pb(6).gap(6).items_center().text_size(11.5).text_color(t.working).child(spinner(t, 11)).child(`${v.op}…`));
   return col;
+}
+
+// "Rebase de feature sobre main · 2/5", or the plain name of what's in progress.
+function opText(d) {
+  const op = d.ops[0], r = d.rebase;
+  const names = { merge: "Merge en curso", rebase: "Rebase en curso", "cherry-pick": "Cherry-pick en curso", revert: "Revert en curso", bisect: "Bisect en curso" };
+  if (op === "rebase" && r) return `Rebase de ${r.branch}${r.ontoName || r.onto ? ` sobre ${r.ontoName ?? r.onto.slice(0, 7)}` : ""}${r.total ? ` · ${r.step}/${r.total}` : ""}`;
+  return names[op] ?? op;
 }
 
 // Who this project commits and pushes as. Click: pin an account to this project.
