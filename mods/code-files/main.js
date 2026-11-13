@@ -9,6 +9,9 @@ import { spaces, readTextFile, writeTextFile, watchFolder, nextCommand, theme, s
 import { location, locationKey, languageOf, directory, PER_FOLDER, TOTAL } from "./tree.js";
 import { lineDiff } from "./diff.js";
 import { loadDrafts, saveDrafts } from "./drafts.js";
+import { blobId, knownArgs, folderOf } from "./gitblob.js"; // git-panel integration
+import { createHash } from "crypto";
+import { Buffer } from "buffer";
 
 const SESSIONS = "code-files.sessions";
 const WIDE = 640, TREE_WIDTH = 230, POLL = 3000;
@@ -127,7 +130,7 @@ export default class CodeFiles extends View {
       if (buf.dirty && !buf.readonly) buf.mode = "edit";
       this.refreshView(buf);
       // A draft written over a version that has since changed on disk: ask.
-      if (draft && draft.baseline !== text) buf.conflict = { disk: text };
+      if (draft && draft.baseline !== text) { buf.conflict = { disk: text }; this.markInGit(buf, cx); }
       buf.loading = false;
       cx.notify();
     });
@@ -216,9 +219,24 @@ export default class CodeFiles extends View {
         if (!buf.dirty) {
           if (disk === null) { buf.missing = true; buf.dirty = true; this.notice(`${buf.name} was deleted on disk`, "warning"); }
           else { this.replaceText(buf, disk); this.notice(`Reloaded ${buf.name}: changed on disk`, "info"); }
-        } else buf.conflict = { disk };
+        } else { buf.conflict = { disk }; this.markInGit(buf, cx); }
         cx.notify();
       } finally { buf.checking = false; }
+    });
+  }
+
+  // git-panel integration: after a checkout or merge, an edited tab may hold
+  // a version Git already stores (another branch's). Then Reload loses
+  // nothing, and the bar says so. Only a hint: reloading is still the person's click.
+  markInGit(buf, cx) {
+    const c = buf.conflict;
+    if (!c || buf.on || !buf.state) return;
+    const text = buf.state.value();
+    cx.spawn(async cx => {
+      try {
+        const r = await exec("git", knownArgs(blobId(text, createHash, (x) => Buffer.from(x, "utf8"))), { cwd: folderOf(buf.path) });
+        if (buf.conflict === c && buf.state?.value() === text) { c.inGit = r.code === 0; cx.notify(); }
+      } catch {}
     });
   }
 
@@ -270,14 +288,14 @@ export default class CodeFiles extends View {
     cx.notify();
   }
 
-  reloadFromDisk(buf, cx) {
+  reloadFromDisk(buf, cx, safe = false) {
     const disk = buf.conflict ? buf.conflict.disk : buf.baseline;
     const go = cx => {
       if (disk === null) { this.closeTab(buf, cx); return; }
       this.replaceText(buf, disk); this.view = "editor"; this.diff = null;
       this.notice(`Reloaded ${buf.name} from disk`, "info"); cx.notify();
     };
-    if (!buf.dirty) { go(cx); return; }
+    if (!buf.dirty || safe) { go(cx); return; }
     this.ask({
       title: `Discard your changes to ${buf.name}?`,
       detail: disk === null ? "The file was deleted on disk. Its tab closes." : "The tab shows the version on disk. Your edits are lost.",
@@ -451,6 +469,10 @@ export default class CodeFiles extends View {
     const bar = (tone, text, actions) => h_flex().flex_none().px(10).py(6).gap(8).items_center().border_b(1).border_color(t.border).bg(t.raised)
       .child(div().w(3).h(18).rounded(2).flex_none().bg(tone))
       .child(div().flex_1().min_w(0).text_size(12).child(text)).children(actions);
+    if (buf.conflict?.inGit && buf.conflict.disk !== null) return bar(t.accent, "Changed on disk (a branch switch or merge?). Your unsaved text is a version Git already stores, so reloading loses nothing.", [
+      this.button("cf-compare", "Compare", t, cx => this.compare(buf, cx)),
+      this.button("cf-reload-safe", "Reload", t, cx => this.reloadFromDisk(buf, cx, true), "primary"),
+      this.button("cf-keep", "Keep mine", t, cx => this.keepMine(buf, cx))]);
     if (buf.conflict) {
       const gone = buf.conflict.disk === null;
       return bar(t.blocked, gone ? "Deleted on disk while you had unsaved changes." : "Changed on disk while you had unsaved changes.", [
@@ -480,7 +502,7 @@ export default class CodeFiles extends View {
         .child(this.button("cf-diff-back", "← Back", t, cx => { this.view = "editor"; this.diff = null; cx.notify(); }))
         .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(buf?.conflict ? "− on disk   + yours" : "− saved   + yours"))
         .when(Boolean(buf?.conflict), el => el
-          .child(this.button("cf-diff-reload", buf.conflict.disk === null ? "Close" : "Reload", t, cx => this.reloadFromDisk(buf, cx), "danger"))
+          .child(this.button("cf-diff-reload", buf.conflict.disk === null ? "Close" : "Reload", t, cx => this.reloadFromDisk(buf, cx, Boolean(buf.conflict?.inGit)), buf.conflict?.inGit ? "primary" : "danger"))
           .child(this.button("cf-diff-keep", "Keep mine", t, cx => this.keepMine(buf, cx)))))
       .child(div().flex_1().min_h(0).relative().font_family(settings().font_family ?? "JetBrains Mono").text_size(12)
         .child(div().id("cf-diff-x").size_full().overflow_x_scrollbar()
