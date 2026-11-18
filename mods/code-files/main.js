@@ -3,12 +3,14 @@
 // only writes over the text this tab loaded, and a changed file asks first.
 // Tabs belong to the space and come back after a restart; unsaved edits are kept
 // as drafts in .drafts/ until saved or discarded.
-import { View, div, svg } from "gpui-kit";
+import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, Editor, EditorState, ScrollHandle, Scrollbar, v_virtual_list, TextView } from "gpui-base";
-import { spaces, readTextFile, writeTextFile, watchFolder, nextCommand, theme, settings, shared, setShared, home, exec, window } from "herdr";
+import { spaces, readTextFile, writeTextFile, watchFolder, nextCommand, theme, settings, shared, setShared, home, exec, window, props, openOverlay } from "herdr";
 import { location, locationKey, languageOf, directory, PER_FOLDER, TOTAL } from "./tree.js";
 import { lineDiff } from "./diff.js";
 import { loadDrafts, saveDrafts } from "./drafts.js";
+import { isImage, loadImage, dropFile, heartbeat, sweep, clearOwn, formatBytes } from "./images.js";
+import { renderMenu, menuHeight, PICK } from "./menu.js";
 import { blobId, knownArgs, folderOf } from "./gitblob.js"; // git-panel integration
 import { createHash } from "crypto";
 import { Buffer } from "buffer";
@@ -18,8 +20,21 @@ const WIDE = 640, TREE_WIDTH = 230, POLL = 3000;
 const basename = (path) => path.split(/[\\/]/).pop() || path;
 const isMarkdown = (path) => /\.(md|markdown|mdx)$/i.test(path);
 
+const revealLabel = () => { const p = window()?.platform; return p === "macos" ? "Reveal in Finder" : p === "windows" ? "Show in Explorer" : "Open containing folder"; };
+
 export default class CodeFiles extends View {
   init(_props, cx) {
+    this.handle = cx.focus_handle();
+    // A popup copy of this mod draws the context menu and nothing else.
+    const menu = props()?.menu;
+    if (menu) { this.kind = "menu"; this.sel = menu.items.findIndex(i => !i.disabled && !i.sep); this.handle.focus(); return; }
+    this.kind = "panel";
+    this.uid = Math.random().toString(36).slice(2, 10);
+    this.menuActions = new Map(); this.menuNonce = null;
+    // Image cache: this copy's folder, kept alive by a heartbeat; folders of copies that are gone are swept.
+    heartbeat(this.uid);
+    cx.spawn(async () => sweep(this.uid));
+    cx.timer.every(60000, () => { heartbeat(this.uid); sweep(this.uid); });
     // Tree (as Herdr's Files): follows the focused pane's folder.
     this.saved = new Map();
     this.entries = new Map(); this.folders = new Set(); this.pending = new Set(); this.marks = {};
@@ -29,7 +44,6 @@ export default class CodeFiles extends View {
     this.width = 0; this.treeWide = true; this.treeNarrow = false;
     this.view = "editor"; this.diff = null; this.confirm = null; this.flash = null; this.ticks = 0;
     this.tabScroll = ScrollHandle.new();
-    this.handle = cx.focus_handle();
     this.dialogHandle = cx.focus_handle();
     // Cmd+W closes the file tab while this panel has the keyboard, not Herdr's tab.
     // Bound here (a key context of our own) so keys.json stays Herdr's and keeps updating.
@@ -56,6 +70,8 @@ export default class CodeFiles extends View {
   }
 
   async close() {
+    if (this.kind === "menu") return;
+    await clearOwn(this.uid);
     this.collectDrafts();
     if (this.draftsChanged) await saveDrafts(this.drafts);
   }
@@ -97,7 +113,8 @@ export default class CodeFiles extends View {
     const s = this.session();
     let buf = s.tabs.find(b => b.path === path);
     if (!buf) {
-      buf = { path, on, name: basename(path), state: null, baseline: null, dirty: false, readonly: Boolean(on),
+      buf = { path, on, name: basename(path), state: null, baseline: null, dirty: false, readonly: Boolean(on) || isImage(path),
+              image: null, fit: true,
               missing: false, error: null, conflict: null, overwrite: false, loading: true, saving: false,
               // Every file opens to read; editing is a deliberate switch (Edit, Cmd+E).
               mode: "view", viewText: "", viewState: null };
@@ -114,6 +131,7 @@ export default class CodeFiles extends View {
   }
 
   load(buf, cx) {
+    if (isImage(buf.path)) { this.loadImageBuf(buf, cx); return; }
     cx.spawn(async cx => {
       let text;
       try { text = await readTextFile(buf.path, { on: buf.on }); }
@@ -134,6 +152,33 @@ export default class CodeFiles extends View {
       buf.loading = false;
       cx.notify();
     });
+  }
+
+  // An image tab: copied into the cache and shown from there. Called again when
+  // the file changes; a new version gets a new cache file (named by its content).
+  loadImageBuf(buf, cx) {
+    if (buf.imageLoading) return;
+    buf.imageLoading = true;
+    cx.spawn(async cx => {
+      try {
+        const img = await loadImage(this.uid, buf.path, buf.on);
+        const old = buf.image;
+        if (!this.allTabs().includes(buf)) { this.dropImage(img.name); return; } // closed meanwhile
+        buf.image = img; buf.error = null;
+        if (old && old.name !== img.name) this.dropImage(old.name, buf);
+      } catch (e) {
+        if (!buf.image) buf.error = e?.message ?? String(e);
+        else if (buf.on === null) this.notice(`Cannot reload ${buf.name}: ${e?.message ?? e}`, "warning");
+      } finally { buf.imageLoading = false; buf.loading = false; cx.notify(); }
+    });
+  }
+
+  allTabs() { return [...this.sessions.values()].flatMap(s => s.tabs); }
+
+  // Deletes a cache file unless another tab still shows the same image.
+  dropImage(name, except) {
+    if (!name || this.allTabs().some(b => b !== except && b.image?.name === name)) return;
+    dropFile(this.uid, name);
   }
 
   editorState(buf, value, readonly) {
@@ -169,6 +214,7 @@ export default class CodeFiles extends View {
   }
 
   release(buf) {
+    if (buf.image) { const name = buf.image.name; buf.image = null; this.dropImage(name, buf); }
     buf.state?.release(); buf.viewState?.release();
     buf.state = null; buf.viewState = null;
     if (this.drafts[buf.path]) { delete this.drafts[buf.path]; this.draftsChanged = true; }
@@ -344,7 +390,7 @@ export default class CodeFiles extends View {
           if (!this.current(context)) continue;
           this.refresh(cx);
           const all = changed.includes(root), set = new Set(changed);
-          for (const b of this.session().tabs) if (!b.on && (all || set.has(b.path))) this.check(b, cx);
+          for (const b of this.session().tabs) if (!b.on && (all || set.has(b.path))) { if (b.image) this.loadImageBuf(b, cx); else this.check(b, cx); }
         }
       } catch { if (this.context === context) this.watched = null; }
     });
@@ -412,6 +458,95 @@ export default class CodeFiles extends View {
     cx.notify();
   }
 
+  // ---------- context menu (a popup copy of this mod) ----------
+
+  openMenu(title, items, cx) {
+    const nonce = Math.random().toString(36).slice(2);
+    this.menuActions = new Map(items.filter(i => i.run).map(i => [i.id, i.run]));
+    this.menuNonce = nonce;
+    openOverlay({ mod: "code-files", kind: "popup", width: 260, height: menuHeight(title, items), props: { menu: { owner: this.uid, nonce, title, items: items.map(({ run, ...rest }) => rest) } } });
+    cx.notify();
+  }
+
+  takePick(cx) {
+    const pick = shared(PICK);
+    if (!pick || pick.owner !== this.uid || pick.nonce !== this.menuNonce) return;
+    this.menuNonce = null;
+    const run = this.menuActions.get(pick.id);
+    cx.spawn(async cx => { setShared(PICK, null); run?.(cx); cx.notify(); });
+  }
+
+  // A file or folder of the tree, or an open tab (tab: its buffer).
+  entryMenu({ path, on, dir, mark, tab }, cx) {
+    const local = !on, rel = this.relative(path), git = !dir && !isImage(path) && (mark === "M" || mark === "A" || mark === "U");
+    const remoteHint = "Not available for files on another machine";
+    const items = [
+      { id: "reveal", label: revealLabel(), disabled: !local, hint: local ? undefined : remoteHint, run: cx => this.reveal(path, cx) },
+      { id: "open-default", label: dir ? "Open folder" : "Open with default app", disabled: !local, hint: local ? undefined : remoteHint, run: cx => this.openDefault(path, cx) },
+      { id: "s1", sep: true },
+      { id: "copy-path", label: "Copy path", run: cx => this.copy(path, "Path", cx) },
+      { id: "copy-rel", label: "Copy relative path", disabled: rel === path, run: cx => this.copy(rel, "Relative path", cx) },
+    ];
+    if (!dir) items.push(
+      { id: "s2", sep: true },
+      { id: "changes", label: "View changes", disabled: !git, hint: git ? "Working tree against the last commit" : isImage(path) ? "Images have no text diff" : "No uncommitted changes", run: cx => this.gitDiff(path, on, cx) });
+    if (tab?.image) items.push({ id: "reload", label: "Reload image", run: cx => { this.loadImageBuf(tab, cx); } });
+    if (tab) items.push({ id: "s3", sep: true }, { id: "close", label: "Close tab", run: cx => this.requestClose(tab, cx) });
+    this.openMenu(basename(path), items, cx);
+  }
+
+  relative(path) {
+    const h = home();
+    if (this.root && path.startsWith(this.root + "/")) return path.slice(this.root.length + 1);
+    return h && path.startsWith(h + "/") ? "~" + path.slice(h.length) : path;
+  }
+
+  copy(text, what, cx) { cx.write_to_clipboard(text); this.notice(`${what} copied`, "success"); cx.notify(); }
+
+  // Shows the file selected in Finder / Explorer; on Linux opens the folder that holds it.
+  reveal(path, cx) {
+    const p = window()?.platform;
+    const [cmd, args] = p === "macos" ? ["open", ["-R", path]] : p === "windows" ? ["explorer", [`/select,${path.replace(/\//g, "\\")}`]] : ["xdg-open", [folderOf(path)]];
+    this.launch(cmd, args, p === "windows", cx);
+  }
+
+  openDefault(path, cx) {
+    const p = window()?.platform;
+    const [cmd, args] = p === "macos" ? ["open", [path]] : p === "windows" ? ["cmd", ["/c", "start", "", path]] : ["xdg-open", [path]];
+    this.launch(cmd, args, p === "windows", cx);
+  }
+
+  // explorer.exe exits with 1 even when it worked, so on Windows only a failure to start counts.
+  launch(cmd, args, ignoreCode, cx) {
+    cx.spawn(async cx => {
+      try {
+        const r = await exec(cmd, args, { timeout: 10000 });
+        if (r.code !== 0 && !ignoreCode) { this.notice(`${cmd}: ${(r.stderr || r.stdout).trim() || `exit ${r.code}`}`, "error"); cx.notify(); }
+      } catch (e) { this.notice(`Cannot run ${cmd}: ${e}`, "error"); cx.notify(); }
+    });
+  }
+
+  // The file on disk against HEAD, in the diff view (opens the file's tab first).
+  gitDiff(path, on, cx) {
+    cx.spawn(async cx => {
+      const cwd = folderOf(path), name = basename(path);
+      try {
+        const [head, disk] = await Promise.all([
+          exec("git", ["--no-optional-locks", "show", `HEAD:./${name}`], { cwd, on }).catch(() => null),
+          readTextFile(path, { on })]);
+        if (disk === null) { this.notice(`${name} is not on disk`, "warning"); cx.notify(); return; }
+        const base = head?.code === 0 ? head.stdout : "";
+        const buf = this.open(path, on, cx);
+        const rows = lineDiff(base, disk);
+        this.diff = { path, label: head?.code === 0 ? "− last commit   + on disk" : "New file · + on disk", rows: rows ?? [{ kind: "@", text: "Too many differences to compare here" }] };
+        this.diffWidth = Math.max(300, ...this.diff.rows.map(r => (String(r.text ?? "").length + 1) * 7 + 100));
+        this.view = "diff";
+        if (buf) this.handle.focus();
+      } catch (e) { this.notice(`Cannot compare ${name}: ${e?.message ?? e}`, "error"); }
+      cx.notify();
+    });
+  }
+
   // ---------- rendering ----------
 
   rows(prefix, depth, out, t, active) {
@@ -422,6 +557,7 @@ export default class CodeFiles extends View {
       out.push(h_flex().id(`file-${path}`).h(28).flex_none().pl(8 + depth * 18).pr(8).gap(7).items_center().rounded(7).cursor_pointer()
         .when(!entry.dir && abs === active, el => el.bg(t.selected)).hover(s => s.bg(t.hover))
         .on_click((_e, cx) => { if (entry.dir) this.toggle(path, cx); else { this.open(abs, this.on, cx); cx.notify(); } })
+        .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.entryMenu({ path: abs, on: this.on, dir: entry.dir, mark }, cx); })
         .child(entry.dir ? svg(`mods/code-files/chevron-${open ? "down" : "right"}.svg`).size(12).flex_none().text_color(t.dim) : div().w(12).flex_none())
         .child(svg(`mods/code-files/${entry.dir ? "folder" : "file"}.svg`).size(14).flex_none().text_color(t.muted))
         .child(div().flex_1().min_w(0).truncate().child(entry.name))
@@ -448,6 +584,7 @@ export default class CodeFiles extends View {
           .tooltip(b.path)
           .on_click((_e, cx) => { this.open(b.path, b.on, cx); cx.notify(); })
           .on_mouse_down("middle", (_e, cx) => { cx.stop_propagation(); this.requestClose(b, cx); })
+          .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.entryMenu({ path: b.path, on: b.on, dir: false, mark: this.marks[b.path], tab: b }, cx); })
           .when(warn, el => el.child(div().text_color(t.blocked).font_semibold().child("!")))
           .child(div().max_w(180).truncate().when(active, el => el.font_semibold()).child(b.name))
           .child(div().id(`cf-close-${b.path}`).w(18).h(18).flex_none().flex().items_center().justify_center().rounded(4)
@@ -500,8 +637,8 @@ export default class CodeFiles extends View {
     return v_flex().flex_1().min_h(0)
       .child(h_flex().flex_none().px(10).py(6).gap(8).items_center().border_b(1).border_color(t.border).bg(t.raised).text_size(12)
         .child(this.button("cf-diff-back", "← Back", t, cx => { this.view = "editor"; this.diff = null; cx.notify(); }))
-        .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(buf?.conflict ? "− on disk   + yours" : "− saved   + yours"))
-        .when(Boolean(buf?.conflict), el => el
+        .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(this.diff.label ?? (buf?.conflict ? "− on disk   + yours" : "− saved   + yours")))
+        .when(Boolean(buf?.conflict) && !this.diff.label, el => el
           .child(this.button("cf-diff-reload", buf.conflict.disk === null ? "Close" : "Reload", t, cx => this.reloadFromDisk(buf, cx, Boolean(buf.conflict?.inGit)), buf.conflict?.inGit ? "primary" : "danger"))
           .child(this.button("cf-diff-keep", "Keep mine", t, cx => this.keepMine(buf, cx)))))
       .child(div().flex_1().min_h(0).relative().font_family(settings().font_family ?? "JetBrains Mono").text_size(12)
@@ -513,13 +650,32 @@ export default class CodeFiles extends View {
 
   editorArea(t, s, buf) {
     if (!s.tabs.length) return v_flex().flex_1().h_full().min_h(0).items_center().justify_center().gap(4).text_color(t.dim).text_size(12)
-      .child(div().child("No open files")).child(div().child("Pick a file in the tree to edit it"));
+      .child(div().child("No open files")).child(div().child("Pick a file in the tree to edit it · right-click for more"));
     return v_flex().flex_1().h_full().min_w(0).min_h(0)
       .child(this.tabStrip(t, s))
       .child((this.view === "diff" ? null : this.banner(t, buf)) ?? div())
       .child(this.view === "diff" && this.diff && buf?.path === this.diff.path ? this.diffView(t, buf)
+        : buf?.image ? this.imageView(t, buf)
         : buf?.state ? this.content(t, buf)
         : div().flex_1().p(12).text_color(t.dim).child(buf?.error || (buf ? "Loading file…" : "")));
+  }
+
+  // Fit: the whole image in the pane, never enlarged past its own size. 1:1: real pixels, scrolled.
+  imageView(t, img_buf) {
+    const img = img_buf.image, w = img.width, h = img.height, known = Boolean(w && h);
+    const pic = image(img.src);
+    const sized = known ? pic.w(w).h(h) : pic.size_full();
+    const fit = img_buf.fit || !known;
+    return v_flex().flex_1().min_h(0).min_w(0)
+      .child(h_flex().flex_none().px(10).py(6).gap(8).items_center().border_b(1).border_color(t.border).bg(t.raised).text_size(12)
+        .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(`${img.format}${known ? ` · ${w}×${h}` : ""} · ${formatBytes(img.bytes)}`))
+        .when(known, el => el.child(this.button("cf-img-fit", img_buf.fit ? "1:1" : "Fit", t, cx => { img_buf.fit = !img_buf.fit; cx.notify(); })))
+        .when(!img_buf.on, el => el.child(this.button("cf-img-reveal", revealLabel(), t, cx => this.reveal(img_buf.path, cx)))))
+      .child(fit
+        ? div().flex_1().min_h(0).min_w(0).p(16).flex().items_center().justify_center().bg(t.canvas)
+          .child(known ? sized.max_w_full().max_h_full() : sized)
+        : div().id("cf-img-scroll").flex_1().min_h(0).min_w(0).overflow_scroll().bg(t.canvas)
+          .child(div().p(16).w(w + 32).h(h + 32).child(sized)));
   }
 
   content(t, buf) {
@@ -548,11 +704,11 @@ export default class CodeFiles extends View {
   status(t, buf) {
     if (!buf) return null;
     const h = home(), rel = this.root && buf.path.startsWith(this.root + "/") ? buf.path.slice(this.root.length + 1) : h && buf.path.startsWith(h) ? "~" + buf.path.slice(h.length) : buf.path;
-    const state = buf.saving ? "Saving…" : buf.conflict ? "Changed on disk" : buf.dirty ? "Unsaved" : buf.state ? "Saved" : "";
+    const state = buf.image ? "Image" : buf.saving ? "Saving…" : buf.conflict ? "Changed on disk" : buf.dirty ? "Unsaved" : buf.state ? "Saved" : "";
     const flash = this.flash, tone = flash?.level === "error" ? t.ansi1 : flash?.level === "warning" ? t.blocked : flash?.level === "success" ? t.ansi2 : t.muted;
     return h_flex().h(24).flex_none().px(10).gap(10).items_center().border_t(1).border_color(t.border).bg(t.chrome).text_size(11).text_color(t.dim)
       .child(div().flex_1().min_w(0).truncate().when(Boolean(flash), el => el.text_color(tone)).child(flash ? flash.text : rel))
-      .child(div().flex_none().child(languageOf(buf.path)))
+      .child(div().flex_none().child(buf.image ? buf.image.format.toLowerCase() : languageOf(buf.path)))
       .child(div().flex_none().text_color(buf.conflict ? t.blocked : buf.dirty ? t.accent : t.dim).child(state));
   }
 
@@ -576,6 +732,8 @@ export default class CodeFiles extends View {
   }
 
   render(cx) {
+    if (this.kind === "menu") return renderMenu(this, cx);
+    this.takePick(cx);
     if (locationKey() !== this.context?.key) this.refresh(cx);
     const space = location().space;
     if (this.ready && space !== this.spaceId) this.switchSpace(space, cx);

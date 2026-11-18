@@ -2,3 +2,4 @@
 .drafts/
 .dev.json
 .accounts.json
+.cache/

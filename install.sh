@@ -27,13 +27,13 @@ backup() { # $1 = ruta existente
 for m in "${MODS[@]}"; do
   dst="$HERDR/mods/$m"
   if [[ -d "$dst" ]]; then
-    if diff -rq -x .drafts -x .dev.json -x .accounts.json -x .DS_Store "$SRC/mods/$m" "$dst" >/dev/null 2>&1; then
+    if diff -rq -x .drafts -x .cache -x .dev.json -x .accounts.json -x .DS_Store "$SRC/mods/$m" "$dst" >/dev/null 2>&1; then
       echo "· $m is up to date"; continue
     fi
     backup "$dst"
   fi
   # Keeps the editor drafts (.drafts) and saved accounts (.accounts.json).
-  rsync -a --delete --exclude .drafts --exclude .dev.json --exclude .accounts.json "$SRC/mods/$m/" "$dst/"
+  rsync -a --delete --exclude .drafts --exclude .cache --exclude .dev.json --exclude .accounts.json "$SRC/mods/$m/" "$dst/"
   echo "✓ $m installed"
 done
 
