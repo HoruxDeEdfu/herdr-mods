@@ -9,8 +9,9 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout, readTextFile } from "herdr";
+import { spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout, readTextFile, props } from "herdr";
 import { readStatus, markerArgs, opFrom, opBadge } from "./gitstate.js"; // git-spaces
+import { initSpaceMenu, renderSpaceMenu } from "./menu.js"; // git-spaces
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -59,6 +60,8 @@ export function tone(t, status) {
 
 export default class Spaces extends View {
   init(_props, cx) {
+    // git-spaces: a popup copy of this mod draws a space's right-click menu and nothing else.
+    if (props()?.spaceMenu) { initSpaceMenu(this, cx); return; }
     this.git = {}; // where() -> { name, branch, ahead, behind, repo, linked }, null: not a repo
     this.checked = {}; // where() -> when it was last looked at
     this.unsure = new Set(); // where()s git couldn't answer for (a machine away)
@@ -296,7 +299,8 @@ export default class Spaces extends View {
 
   menu(w) {
     // A popup is as tall as its items; height is only the most.
-    openOverlay({ mod: "menu", kind: "popup", width: 200, height: 260, props: { tab: "space", target: { id: w.id } } });
+    // git-spaces: our own copy of Herdr's space menu, with "Reveal in Finder" added.
+    openOverlay({ mod: "git-spaces", kind: "popup", width: 220, height: 300, props: { spaceMenu: { id: w.id } } });
   }
 
   orderingDue(now) {
@@ -512,6 +516,7 @@ export default class Spaces extends View {
   }
 
   render() {
+    if (this.kind === "space-menu") return renderSpaceMenu(this); // git-spaces
     const t = theme();
     const collapsed = narrow();
     const palette = ["ansi6", "ansi3", "ansi4", "ansi5", "ansi2", "ansi1"];
